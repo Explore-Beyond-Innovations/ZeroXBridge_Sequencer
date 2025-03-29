@@ -1,19 +1,24 @@
-use axum::{routing::get, Extension, Router};
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use axum::{extract::State, routing::get, Extension, Router};
+use sqlx::PgPool;
+use std::sync::Arc;
+use dotenvy::dotenv;
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use hyper::Server;
+use std::{net::SocketAddr, path::Path};
 use ethers::providers::{Http, Provider};
 use ethers::contract::Contract;
-use std::sync::Arc;
 use crate::oracle_service::oracle_service::sync_tvl;
 
-
 mod config;
-mod db;
+mod api;
 
-use config::load_config;
-use db::client::DBClient;
+use api::routes::withdrawal_routes;
+use config::get_db_pool;
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
 
     let config = load_config(Some(Path::new("config.toml"))).expect("Failed to load config");
 
@@ -27,29 +32,40 @@ async fn main() {
         sync_tvl(l1_contract, l2_contract, &config).await.expect("TVL sync failed");
     });
 
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
+        ))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
-    let config = load_config(Some(Path::new("config.toml"))).expect("Failed to load config");
-
-    let db = DBClient::new(&config)
+    let pool = get_db_pool()
         .await
-        .expect("Failed to connect to DB");
+        .expect("Failed to connect to database");
 
-    db.run_migrations().await.expect("Failed to run migrations");
+    // Run database migrations
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run database migrations");
 
-    let shared_db = Arc::new(db);
+    let state = Arc::new(pool);
 
-    let app = Router::new()
-        .route("/", get(handler))
-        .layer(Extension(shared_db));
+    let app = create_router(state.clone());
 
-    let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
-    println!("ZeroXBridge Sequencer listening on {}", addr);
+    let addr = "0.0.0.0:3000".parse().unwrap();
 
-    axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
+    println!("🚀 Listening on {}", addr);
+
+    Server::bind(&addr)
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-async fn handler() -> &'static str {
-    "Welcome to ZeroXBridge Sequencer"
+fn create_router(pool: Arc<PgPool>) -> Router {
+    Router::new()
+        .merge(withdrawal_routes())
+        .with_state(pool)
+        .layer(TraceLayer::new_for_http())
 }
