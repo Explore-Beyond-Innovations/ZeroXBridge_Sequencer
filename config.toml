@@ -46,3 +46,7 @@ cache_size = 1000
 [logging]
 level = "info"  # Options: debug, info, warn, error
 file = "logs/sequencer.log"
+
+[oracle]
+tolerance_percent = 0.01      # 1%
+polling_interval_seconds = 60 # 1 minute
