@@ -1,11 +1,11 @@
+use chrono;
 use serde::Deserialize;
 use sqlx::PgPool;
 use starknet::core::types::Felt;
 use starknet::providers::{AnyProvider, Provider};
-use tracing::{info, warn, error};
 use std::time::Duration;
 use tokio::time::sleep;
-use chrono;
+use tracing::{error, info, warn};
 
 // Configuration structure (loaded from config.toml)
 #[derive(Debug, Clone, Deserialize)]
@@ -15,7 +15,6 @@ pub struct QueueConfig {
     pub max_retries: u32,
     pub merkle_update_confirmations: usize,
 }
-
 
 #[derive(Debug, sqlx::FromRow)]
 struct Withdrawal {
@@ -34,13 +33,13 @@ struct Withdrawal {
 enum ValidationError {
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
-    
+
     #[error("RPC error: {0}")]
     RpcError(String),
-    
+
     #[error("Invalid commitment format")]
     InvalidCommitment,
-    
+
     #[error("Merkle root not updated")]
     MerkleRootNotUpdated,
 }
@@ -72,30 +71,33 @@ impl L2Queue {
 
     async fn process_withdrawals(&self) -> Result<(), sqlx::Error> {
         let withdrawals = self.fetch_pending_withdrawals().await?;
-        
+
         for withdrawal in withdrawals {
             let mut transaction = self.db_pool.begin().await?;
-            
+
             // Apply processing delay
             sleep(Duration::from_secs(self.config.initial_retry_delay_sec)).await;
 
             match self.validate_withdrawal(&withdrawal).await {
                 Ok(true) => {
-                    self.mark_for_proof_generation(&mut transaction, &withdrawal).await?;
+                    self.mark_for_proof_generation(&mut transaction, &withdrawal)
+                        .await?;
                     transaction.commit().await?;
                     info!("Withdrawal {} validated successfully", withdrawal.id);
                 }
                 Ok(false) => {
-                    self.handle_retry(&mut transaction, &withdrawal, "Validation failed").await?;
+                    self.handle_retry(&mut transaction, &withdrawal, "Validation failed")
+                        .await?;
                     transaction.commit().await?;
                 }
                 Err(e) => {
-                    self.handle_critical_error(&mut transaction, &withdrawal, &e.to_string()).await?;
+                    self.handle_critical_error(&mut transaction, &withdrawal, &e.to_string())
+                        .await?;
                     transaction.commit().await?;
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -117,7 +119,9 @@ impl L2Queue {
 
     async fn validate_withdrawal(&self, withdrawal: &Withdrawal) -> Result<bool, ValidationError> {
         // Check commitment exists on L2
-        let commitment_exists = self.check_l2_commitment(withdrawal.commitment_hash.clone()).await?;
+        let commitment_exists = self
+            .check_l2_commitment(withdrawal.commitment_hash.clone())
+            .await?;
         // Verify Merkle root updates
         let merkle_updated = self.verify_merkle_update(withdrawal.created_at).await?;
 
@@ -125,11 +129,12 @@ impl L2Queue {
     }
 
     async fn check_l2_commitment(&self, commitment_hash: String) -> Result<bool, ValidationError> {
-        let commitment = Felt::from_hex(&commitment_hash)
-            .map_err(|_| ValidationError::InvalidCommitment)?;
+        let commitment =
+            Felt::from_hex(&commitment_hash).map_err(|_| ValidationError::InvalidCommitment)?;
 
         // Starknet contract call implementation would go here
-        let result = self.starknet_client
+        let result = self
+            .starknet_client
             .get_transaction_status(commitment)
             .await
             .map_err(|e| ValidationError::RpcError(e.to_string()))?;
@@ -137,7 +142,10 @@ impl L2Queue {
         Ok(result.is_accepted_on_l2())
     }
 
-    async fn verify_merkle_update(&self, created_at: chrono::DateTime<chrono::Utc>) -> Result<bool, ValidationError> {
+    async fn verify_merkle_update(
+        &self,
+        created_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, ValidationError> {
         let count = sqlx::query_scalar!(
             r#"SELECT COUNT(*) FROM merkle_roots WHERE chain = 'L2' AND created_at > $1"#,
             created_at
@@ -155,7 +163,7 @@ impl L2Queue {
         reason: &str,
     ) -> Result<(), sqlx::Error> {
         warn!("Retrying withdrawal {}: {}", withdrawal.id, reason);
-        
+
         sqlx::query!(
             r#"
             UPDATE withdrawals 
@@ -178,7 +186,7 @@ impl L2Queue {
         error: &str,
     ) -> Result<(), sqlx::Error> {
         error!("Critical error for withdrawal {}: {}", withdrawal.id, error);
-        
+
         sqlx::query!(
             r#"
             UPDATE withdrawals 

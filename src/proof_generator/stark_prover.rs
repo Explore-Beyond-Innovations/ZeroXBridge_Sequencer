@@ -1,8 +1,13 @@
-use sqlx::PgPool;
-use stwo;
 use crate::config::MerkleConfig;
+use sqlx::PgPool;
+use stwo::cairo::stark::{
+    ProverParameters,
+    StarkProver,
+    ProofOptions
+};
 
-#[derive(Debug, thiserror::Error )]
+
+#[derive(Debug, thiserror::Error)]
 enum ProofGenerationError {
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
@@ -14,7 +19,7 @@ enum ProofGenerationError {
 pub struct StarkProver {
     db_pool: PgPool,
     merkle_tree_data: MerkleConfig,
-    commitment_hash: String
+    commitment_hash: String,
 }
 
 impl StarkProver {
@@ -42,11 +47,16 @@ impl StarkProver {
     /// @params proof The generated proof (string)
     /// @params commitment_hash The pre-validated commitment hash of the transaction
     /// returns Result<(), ProofGenerationError>
-    async  fn save_proof_to_db(&self, merkle_tree_root: &str, proof: &str, commitment_hash: &str) -> Result<(), ProofGenerationError>{
+    async fn save_proof_to_db(
+        &self,
+        merkle_tree_root: &str,
+        proof: &str,
+        commitment_hash: &str,
+    ) -> Result<(), ProofGenerationError> {
         sqlx::query!(
             r#"
-            INSERT INTO stark_proofs (merkle_tree_root, commitment_hash, proof, updated_at)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO stark_proofs (merkle_tree_root, commitment_hash, proof)
+            VALUES ($1, $2, $3)
             "#,
             merkle_tree_root,
             commitment_hash,
@@ -56,15 +66,17 @@ impl StarkProver {
         .await
         .map_err(|e| ProofGenerationError::DatabaseError(e))?;
 
+        // Log the proof save success
+        tracing::debug!("STARK proof successfully saved to DB");
         Ok(())
     }
-    
+
     /// Runs the StarkProver application
     /// generates the proof and save it to db
     async fn run(&self) {
         let proof = self.generate_proof();
         // save the data to database
-        self.save_proof_to_db(self.merkle_tree_root, &proof, &self.commitment_hash).await?;
+        self.save_proof_to_db(self.merkle_tree_root, &proof, &self.commitment_hash)
+            .await.unwrap();
     }
-
 }

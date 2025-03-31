@@ -1,7 +1,10 @@
-use axum::{body::Body, http::{Request, StatusCode}};
-use zeroxbridge_sequencer::api::{handlers::WithdrawalRequest, routes::create_test_app};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use serde_json::json;
-use tower::ServiceExt; // for `app.oneshot()`
+use tower::ServiceExt;
+use zeroxbridge_sequencer::api::{handlers::WithdrawalRequest, routes::create_test_app}; // for `app.oneshot()`
 
 #[tokio::test]
 async fn test_post_valid_withdrawal() {
@@ -15,7 +18,8 @@ async fn test_post_valid_withdrawal() {
             json!({
                 "stark_pub_key": "0xabc123",
                 "amount": 5000
-            }).to_string(),
+            })
+            .to_string(),
         ))
         .unwrap();
 
@@ -39,7 +43,8 @@ async fn test_post_invalid_withdrawal() {
             json!({
                 "stark_pub_key": "",
                 "amount": -10
-            }).to_string(),
+            })
+            .to_string(),
         ))
         .unwrap();
 
