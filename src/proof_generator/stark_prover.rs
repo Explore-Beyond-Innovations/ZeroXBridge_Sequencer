@@ -38,8 +38,15 @@ impl StarkProver {
     /// Generate the STARK Proof
     /// return String The stark proof
     pub fn generate_proof(&self) -> String {
-        // Proof logic here
+        //(TODO) Proof generation logic
         "proof".to_owned()
+    }
+
+    /// Get the merkle tree data root
+    /// return String The root as a string
+    pub fn get_merkle_tree_rook(&self) -> String {
+        //(TODO) Logic to get root
+        "root".to_owned()
     }
 
     /// Saves the STARK Proof and the metadata to DB
@@ -75,8 +82,9 @@ impl StarkProver {
     /// generates the proof and save it to db
     async fn run(&self) {
         let proof = self.generate_proof();
+        let merkle_tree_root = self.get_merkle_tree_rook();
         // save the data to database
-        self.save_proof_to_db(self.merkle_tree_root, &proof, &self.commitment_hash)
+        self.save_proof_to_db(&merkle_tree_root, &proof, &self.commitment_hash)
             .await.unwrap();
     }
 }
