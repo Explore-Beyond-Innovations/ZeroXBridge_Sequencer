@@ -7,3 +7,5 @@ pub mod herodotus_api;
 pub mod utils;
 
 pub mod l2_event_watcher;
+
+pub mod event_logs;

@@ -223,3 +223,38 @@ pub async fn get_last_processed_block(
 
     Ok(record.map(|r| r.last_block as u64))
 }
+
+pub async fn update_last_processed_event_block(
+    conn: &mut PgConnection,
+    block_number: u64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        UPDATE event_log_block_tracker
+        SET last_block = $1, 
+        updated_at = NOW() 
+        WHERE id = TRUE;
+        "#,
+        block_number as i64
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn get_last_processed_event_block(
+    conn: &mut PgConnection,
+) -> Result<Option<u64>, sqlx::Error> {
+    let record = sqlx::query!(
+        r#"
+        SELECT last_block
+        FROM event_log_block_tracker
+        WHERE id = TRUE;
+        "#,
+    )
+    .fetch_optional(conn)
+    .await?;
+
+    Ok(record.map(|r| r.last_block as u64))
+}
