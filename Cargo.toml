@@ -32,7 +32,7 @@ tower-http = { version = "0.4", features = ["trace", "cors"] }
 hyper = "0.14.27"
 
 # Starknet interaction
-starknet = "0.13.0"  # Consider bumping to 0.13 if compatible; avoid 0.7 unless needed for `no-std`.
+starknet = "0.13.0"  # Consider bumping to 0.13 if compatible; avoid 0.7 unless needed for no-std.
 
 # Ethereum interaction
 ethers = { version = "2.0.14", features = ["rustls", "ws"] }
@@ -45,6 +45,7 @@ dotenv = "0.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 sha2 = "0.10"
+alloy = "0.15.6"
 alloy-json-rpc = "0.15.6"
 alloy-primitives = "1.0.0"
 alloy-rpc-client = "0.15.6"
