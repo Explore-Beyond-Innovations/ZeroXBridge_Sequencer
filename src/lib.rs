@@ -17,3 +17,4 @@ pub mod relayer {
 
 pub mod events;
 pub mod proof_generator;
+pub use proof_generator::{ScarbBuilder, StarkProver};
