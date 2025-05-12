@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use log::{info, error};
+use tracing::{info, error};
 use serde::Serialize;
 
 use crate::proof_generator::scarb_builder::ScarbBuilder;

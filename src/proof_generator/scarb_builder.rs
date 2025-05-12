@@ -1,7 +1,9 @@
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::io::{Error, ErrorKind, Result};
+use std::fs;
 use tracing::{info, error};
+use toml::Value;
 
 /// Structure to manage Scarb builds for Cairo 1.0 projects
 pub struct ScarbBuilder {
@@ -66,27 +68,11 @@ impl ScarbBuilder {
 
         info!("Build succeeded");
 
-        // Find the generated Sierra JSON file
-        // This assumes the default output location for Scarb
-        let target_dir = self.project_dir.join("target/dev");
-        
-        // Get all Sierra JSON files
-        let entries = std::fs::read_dir(&target_dir).map_err(|e| {
-            error!("Failed to read target directory: {}", e);
-            Error::new(
-                ErrorKind::NotFound,
-                format!("Failed to read target directory: {}", e),
-            )
-        })?;
-
-        // Find the first Sierra JSON file
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() && path.to_string_lossy().ends_with(".sierra.json") {
-                info!("Generated Sierra JSON file: {:?}", path);
-                return Ok(path);
-            }
+        // Use the expected output path to locate the generated file
+        let output_path = self.get_expected_output_path()?;
+        if output_path.exists() {
+            info!("Generated Sierra JSON file: {:?}", output_path);
+            return Ok(output_path);
         }
 
         Err(Error::new(
@@ -95,14 +81,42 @@ impl ScarbBuilder {
         ))
     }
 
-    /// Get the expected output file path
-    /// 
+    /// Get the expected output file path by parsing Scarb.toml
+    ///
     /// # Returns
-    /// * `PathBuf` - The expected path to the generated Sierra JSON file
-    pub fn get_expected_output_path(&self) -> PathBuf {
-        // This is a simplified approach; in reality, we would parse Scarb.toml
-        // to determine the exact output file name
-        self.project_dir.join("target/dev/cairo1.sierra.json")
+    /// * `Result<PathBuf>` - The expected path to the generated Sierra JSON file
+    pub fn get_expected_output_path(&self) -> Result<PathBuf> {
+        let scarb_toml_path = self.project_dir.join("Scarb.toml");
+
+        // Read and parse Scarb.toml
+        let scarb_toml_content = fs::read_to_string(&scarb_toml_path).map_err(|e| {
+            Error::new(
+                ErrorKind::NotFound,
+                format!("Failed to read Scarb.toml: {}", e),
+            )
+        })?;
+        let scarb_toml: Value = scarb_toml_content.parse::<Value>().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("Failed to parse Scarb.toml: {}", e),
+            )
+        })?;
+
+        // Extract the output file name from Scarb.toml
+        let output_file_name = scarb_toml
+            .get("package")
+            .and_then(|pkg| pkg.get("name"))
+            .and_then(|name| name.as_str())
+            .map(|name| format!("{}.sierra.json", name))
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    "Failed to determine output file name from Scarb.toml",
+                )
+            })?;
+
+        // Construct the full path to the output file
+        Ok(self.project_dir.join("target/dev").join(output_file_name))
     }
 }
 

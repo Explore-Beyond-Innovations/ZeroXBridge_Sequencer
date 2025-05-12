@@ -4,9 +4,6 @@ mod db;
 mod proof_generator;
 mod queue;
 mod relayer;
-mod merkle_tree;
-mod oracle_service;
-
 use crate::proof_generator::StarkProver;
 use crate::relayer::starknet_relayer::{StarknetRelayer, StarknetRelayerConfig};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
