@@ -22,6 +22,7 @@ mod ZeroXBridge {
         balances: Map<ContractAddress, u256>,
         merkle_root: felt252,
         total_deposits: u256,
+        owner: ContractAddress, // Add this line
     }
 
     #[event]
@@ -59,10 +60,14 @@ mod ZeroXBridge {
         fn deposit(ref self: ContractState, amount: u256) {
             let caller = get_caller_address();
             let current_balance = self.balances.read(caller);
-            self.balances.write(caller, current_balance + amount);
-            
+            let new_balance = current_balance.checked_add(amount)
+                .expect('Balance overflow on deposit');
+            self.balances.write(caller, new_balance);
+
             let total = self.total_deposits.read();
-            self.total_deposits.write(total + amount);
+            let new_total = total.checked_add(amount)
+                .expect('Total deposits overflow on deposit');
+            self.total_deposits.write(new_total);
 
             self.emit(Deposit { user: caller, amount });
         }
@@ -70,12 +75,14 @@ mod ZeroXBridge {
         fn withdraw(ref self: ContractState, amount: u256) {
             let caller = get_caller_address();
             let current_balance = self.balances.read(caller);
-            assert(current_balance >= amount, 'Insufficient balance');
-            
-            self.balances.write(caller, current_balance - amount);
-            
+            let new_balance = current_balance.checked_sub(amount)
+                .expect('Insufficient balance');
+            self.balances.write(caller, new_balance);
+
             let total = self.total_deposits.read();
-            self.total_deposits.write(total - amount);
+            let new_total = total.checked_sub(amount)
+                .expect('Total deposits underflow on withdraw');
+            self.total_deposits.write(new_total);
 
             self.emit(Withdrawal { user: caller, amount });
         }
@@ -85,9 +92,16 @@ mod ZeroXBridge {
         }
 
         fn update_merkle_root(ref self: ContractState, new_root: felt252) {
+            self.assert_only_owner(); // Add this line for access control
             let old_root = self.merkle_root.read();
             self.merkle_root.write(new_root);
             self.emit(MerkleRootUpdated { old_root, new_root });
+        }
+
+        fn assert_only_owner(self: @ContractState) {
+            let caller = get_caller_address();
+            let owner = self.owner.read();
+            assert(caller == owner, 'Only owner can call this function');
         }
     }
 }

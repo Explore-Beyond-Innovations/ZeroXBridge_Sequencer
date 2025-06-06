@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
+use log::{info, debug, error}; // <-- Add this import
 
 /// Manages Cairo 1.0 compilation using Scarb
 pub struct CairoBuildManager {
@@ -30,7 +31,7 @@ impl CairoBuildManager {
             return Err(BuildError::DirectoryNotFound(self.base_dir.clone()));
         }
 
-        println!("Starting Cairo build in directory: {:?}", self.base_dir);
+        info!("Starting Cairo build in directory: {:?}", self.base_dir); // line 33
 
         // Execute scarb build command
         let output = Command::new("scarb")
@@ -41,19 +42,19 @@ impl CairoBuildManager {
 
         // Check if the command was successful
         if output.status.success() {
-            println!("Build succeeded");
+            info!("Build succeeded"); // line 44
             
             // Convert stdout to string for logging
             let stdout = String::from_utf8_lossy(&output.stdout);
             if !stdout.is_empty() {
-                println!("Build output: {}", stdout);
+                debug!("Build output: {}", stdout); // line 49
             }
 
             // Check if the expected output file exists
             let output_file = self.get_sierra_output_path()?;
             
             if output_file.exists() {
-                println!("Sierra file generated successfully: {:?}", output_file);
+                info!("Sierra file generated successfully: {:?}", output_file); // line 56
                 Ok(output_file)
             } else {
                 Err(BuildError::OutputFileNotFound(output_file))
@@ -67,7 +68,7 @@ impl CairoBuildManager {
                 stderr.to_string()
             };
             
-            println!("Build failed: {}", error_msg);
+            error!("Build failed: {}", error_msg); // line 70
             Err(BuildError::BuildFailed(error_msg))
         }
     }

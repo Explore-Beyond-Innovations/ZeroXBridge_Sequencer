@@ -95,7 +95,11 @@ if [ -d "crates/cairo1-rust-vm" ]; then
     if command -v scarb &> /dev/null; then
         print_status "Attempting to build Cairo project..."
         cd crates/cairo1-rust-vm
-        
+        if [ $? -ne 0 ]; then
+            print_error "Failed to change directory to crates/cairo1-rust-vm"
+            exit 1
+        fi
+
         if [ -f "Scarb.toml" ]; then
             if scarb build; then
                 print_success "Cairo project built successfully"
@@ -115,6 +119,10 @@ if [ -d "crates/cairo1-rust-vm" ]; then
         fi
         
         cd - > /dev/null
+        if [ $? -ne 0 ]; then
+            print_error "Failed to return to previous directory"
+            exit 1
+        fi
     fi
 else
     print_warning "Cairo project directory not found: crates/cairo1-rust-vm"
