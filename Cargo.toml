@@ -1,5 +1,5 @@
 [package]
-name = "zeroxbridge_sequencer"
+name = "zeroxbridge-sequencer"
 version = "0.1.0"
 edition = "2021"
 authors = ["ZeroXBridge Team <info@zeroxbridge.com>"]
@@ -32,7 +32,7 @@ tower-http = { version = "0.4", features = ["trace", "cors"] }
 hyper = "0.14.27"
 
 # Starknet interaction
-starknet = "0.13.0"  # Consider bumping to 0.13 if compatible; avoid 0.7 unless needed for `no-std`.
+starknet = "0.13.0"
 
 # Ethereum interaction
 ethers = { version = "2.0.14", features = ["rustls", "ws"] }
@@ -65,3 +65,4 @@ offline = true
 pretty_assertions = "1.4.0"
 tokio-test = "0.4"
 mockito = "0.31"
+tempfile = "3.0"  # For testing with temporary directories

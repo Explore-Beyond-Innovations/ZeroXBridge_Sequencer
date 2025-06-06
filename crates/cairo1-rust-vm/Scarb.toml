@@ -1,14 +1,9 @@
 [package]
 name = "cairo1"
 version = "0.1.0"
-edition = "2024_07"
-
-# See more keys and their definitions at https://docs.swmansion.com/scarb/docs/reference/manifest.html
+edition = "2023_11"
 
 [dependencies]
+starknet = ">=2.3.0"
 
-[dev-dependencies]
-cairo_test = "2.9.2"
-
-[cairo]
-sierra-replace-ids = true
+[[target.starknet-contract]]

@@ -2,6 +2,7 @@ pub mod api;
 pub mod config;
 pub mod db;
 pub mod http;
+pub mod proof_generator;
 pub mod oracle_service {
     pub mod oracle_service;
 }
@@ -17,3 +18,5 @@ pub mod relayer {
 
 pub mod events;
 pub mod proof_generator;
+
+pub use proof_generator::{CairoBuildManager, StarkProver, BuildError, ProofError};

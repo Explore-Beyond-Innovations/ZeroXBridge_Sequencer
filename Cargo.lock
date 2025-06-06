@@ -6564,7 +6564,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zeroxbridge_sequencer"
+name = "zeroxbridge-sequencer"
 version = "0.1.0"
 dependencies = [
  "alloy-json-rpc",
@@ -6590,6 +6590,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "starknet",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",

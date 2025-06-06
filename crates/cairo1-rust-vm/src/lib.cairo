@@ -1,163 +1,93 @@
-/// Verifies a Merkle proof for a given leaf hash against an expected root hash
-///
-/// # Arguments
-///
-/// * `commitment_hash` (felt252) - The hash of the leaf node to verify.
-/// * `proof` (Array<felt252>) - An array of sibling hashes.
-/// * `new_root` (felt252) - The expected Merkle root hash.
-///
-/// # Returns
-///
-/// * `felt252` - The `new_root` if the verification is successful.
-///
-/// # Panics
-///
-/// * Panics with the message 'Computed root does not match' if the verification fails.
-fn verify_commitment_in_root(
-    commitment_hash: felt252, proof: Array<felt252>, new_root: felt252,
-) -> felt252 {
-    assert(!proof.is_empty(), 'Proof must not be empty');
-    let proof_span: Span<felt252> = proof.span();
+mod proof_gen;
 
-    let mut computed_root: felt252 = commitment_hash;
-    for proof_element in proof_span {
-        computed_root =
-            if Into::<felt252, u256>::into(computed_root) < (*proof_element).into() {
-                core::pedersen::pedersen(computed_root, *proof_element)
-            } else {
-                core::pedersen::pedersen(*proof_element, computed_root)
-            };
-    }
+use starknet::ContractAddress;
 
-    assert(computed_root == new_root, 'Computed root does not match');
-
-    computed_root
+#[starknet::interface]
+trait IZeroXBridge<TContractState> {
+    fn get_balance(self: @TContractState, user: ContractAddress) -> u256;
+    fn deposit(ref self: TContractState, amount: u256);
+    fn withdraw(ref self: TContractState, amount: u256);
+    fn get_merkle_root(self: @TContractState) -> felt252;
+    fn update_merkle_root(ref self: TContractState, new_root: felt252);
 }
 
+#[starknet::contract]
+mod ZeroXBridge {
+    use super::IZeroXBridge;
+    use starknet::{ContractAddress, get_caller_address};
+    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
 
-/// Verifies a Merkle proof by computing the root from a leaf and its siblings.
-///
-/// This function takes a flattened array containing the expected Merkle root,
-/// the leaf hash, and the sibling hashes that constitute the proof path.
-///
-/// # Arguments
-///
-/// * `input` (`Array<felt252>`) - An array containing the Merkle proof components,
-///   structured precisely as follows:
-///   - `input[0]`: expected Merkle root (`root`).
-///   - `input[1]`: hash of the leaf (`leaf`).
-///   - `input[2..N]`: sibling hashes (`siblings`).
-///
-/// # Returns
-///
-/// * `Array<felt252>` - An array containing a single `felt252` element representing
-///   the computed Merkle root.
-fn main(input: Array<felt252>) -> Array<felt252> {
-    assert(input.len() >= 3, 'invalid input');
-    let mut proof = ArrayTrait::new();
-    for i in 2..input.len() {
-        proof.append(*input.at(i));
-    }
-    let verified_root = verify_commitment_in_root(*input.at(1), proof, *input.at(0));
-
-    let mut result_array = ArrayTrait::new();
-    result_array.append(verified_root);
-    result_array
-}
-
-#[cfg(test)]
-mod tests {
-    use super::verify_commitment_in_root;
-
-    // Helper function to build a simple 4-leaf tree for tests
-    fn build_test_tree() -> (felt252, felt252, felt252, felt252, felt252, felt252, felt252) {
-        let leaf_0: felt252 = 10;
-        let leaf_1: felt252 = 20;
-        let leaf_2: felt252 = 30;
-        let leaf_3: felt252 = 40;
-
-        let h_01 = core::pedersen::pedersen(leaf_0, leaf_1);
-        let h_23 = core::pedersen::pedersen(leaf_2, leaf_3);
-        let root = core::pedersen::pedersen(h_01, h_23);
-
-        (leaf_0, leaf_1, leaf_2, leaf_3, h_01, h_23, root)
+    #[storage]
+    struct Storage {
+        balances: Map<ContractAddress, u256>,
+        merkle_root: felt252,
+        total_deposits: u256,
     }
 
-    #[test]
-    #[available_gas(5000000)]
-    fn test_correct_proof_passes() {
-        let (leaf_0, leaf_1, leaf_2, leaf_3, h_01, h_23, root) = build_test_tree();
-
-        let mut proof_0: Array = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1); // Sibling at level 0
-        proof_0.append(h_23); // Sibling at level 1
-        let verified_root_0 = verify_commitment_in_root(leaf_0, proof_0, root);
-        assert(verified_root_0 == root, 'Leaf 0 verification failed');
-
-        let mut proof_3: Array = ArrayTrait::<felt252>::new();
-        proof_3.append(leaf_2); // Sibling at level 0
-        proof_3.append(h_01); // Sibling at level 1
-        let verified_root_3 = verify_commitment_in_root(leaf_3, proof_3, root);
-        assert(verified_root_3 == root, 'Leaf 3 verification failed');
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        Deposit: Deposit,
+        Withdrawal: Withdrawal,
+        MerkleRootUpdated: MerkleRootUpdated,
     }
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_leaf_fails() {
-        let (_, leaf_1, _, _, _, h_23, root) = build_test_tree();
-        let mut proof_0 = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1);
-        proof_0.append(h_23);
-
-        let wrong_leaf = 999;
-        verify_commitment_in_root(wrong_leaf, proof_0, root);
+    #[derive(Drop, starknet::Event)]
+    struct Deposit {
+        user: ContractAddress,
+        amount: u256,
     }
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_sibling_fails() {
-        let (leaf_0, _, _, _, _, h_23, root) = build_test_tree();
-        let mut proof_0_wrong = ArrayTrait::<felt252>::new();
-        proof_0_wrong.append(998); // Wrong sibling for leaf 0
-        proof_0_wrong.append(h_23);
-
-        verify_commitment_in_root(leaf_0, proof_0_wrong, root);
+    #[derive(Drop, starknet::Event)]
+    struct Withdrawal {
+        user: ContractAddress,
+        amount: u256,
     }
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_root_fails() {
-        let (leaf_0, leaf_1, _, _, _, h_23, _) = build_test_tree();
-        let mut proof_0 = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1);
-        proof_0.append(h_23);
-
-        let wrong_root = 777;
-        verify_commitment_in_root(leaf_0, proof_0, wrong_root);
+    #[derive(Drop, starknet::Event)]
+    struct MerkleRootUpdated {
+        old_root: felt252,
+        new_root: felt252,
     }
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic]
-    fn test_empty_proof_fails() {
-        // Only run this test if tree height > 0
-        let (leaf_0, _, _, _, _, _, root) = build_test_tree();
-        let mut empty_proof = ArrayTrait::<felt252>::new();
+    #[abi(embed_v0)]
+    impl ZeroXBridgeImpl of IZeroXBridge<ContractState> {
+        fn get_balance(self: @ContractState, user: ContractAddress) -> u256 {
+            self.balances.read(user)
+        }
 
-        verify_commitment_in_root(leaf_0, empty_proof, root);
-    }
+        fn deposit(ref self: ContractState, amount: u256) {
+            let caller = get_caller_address();
+            let current_balance = self.balances.read(caller);
+            self.balances.write(caller, current_balance + amount);
+            
+            let total = self.total_deposits.read();
+            self.total_deposits.write(total + amount);
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic]
-    fn test_malformed_proof_fails() {
-        let (leaf_0, leaf_1, _, _, _, _, root) = build_test_tree();
-        let mut short_proof = ArrayTrait::<felt252>::new();
-        short_proof.append(leaf_1); // Only one element provided
+            self.emit(Deposit { user: caller, amount });
+        }
 
-        verify_commitment_in_root(leaf_0, short_proof, root);
+        fn withdraw(ref self: ContractState, amount: u256) {
+            let caller = get_caller_address();
+            let current_balance = self.balances.read(caller);
+            assert(current_balance >= amount, 'Insufficient balance');
+            
+            self.balances.write(caller, current_balance - amount);
+            
+            let total = self.total_deposits.read();
+            self.total_deposits.write(total - amount);
+
+            self.emit(Withdrawal { user: caller, amount });
+        }
+
+        fn get_merkle_root(self: @ContractState) -> felt252 {
+            self.merkle_root.read()
+        }
+
+        fn update_merkle_root(ref self: ContractState, new_root: felt252) {
+            let old_root = self.merkle_root.read();
+            self.merkle_root.write(new_root);
+            self.emit(MerkleRootUpdated { old_root, new_root });
+        }
     }
 }
