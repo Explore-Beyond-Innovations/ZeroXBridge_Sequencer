@@ -22,7 +22,12 @@ mod ZeroXBridge {
         balances: Map<ContractAddress, u256>,
         merkle_root: felt252,
         total_deposits: u256,
-        owner: ContractAddress, // Add this line
+        owner: ContractAddress,
+    }
+
+    #[constructor]
+    fn constructor(ref self: ContractState, owner: ContractAddress) {
+        self.owner.write(owner);
     }
 
     #[event]
