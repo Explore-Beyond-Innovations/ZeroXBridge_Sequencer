@@ -6305,6 +6305,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-builder"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "serde",
+ "serde_json",
+ "starknet-crypto",
+ "starknet-types-core",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "trim-in-place"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7179,6 +7192,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tree-builder",
  "url",
  "uuid 1.16.0",
 ]

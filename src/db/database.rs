@@ -205,7 +205,7 @@ pub async fn update_last_processed_block(
     .await?;
 
     Ok(())
-}0
+}
 
 pub async fn get_last_processed_block(
     conn: &mut PgConnection,

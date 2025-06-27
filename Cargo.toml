@@ -56,6 +56,9 @@ rand = "0.8"
 config = "0.15.11"
 alloy = "0.14.0"
 
+# Tree builder for L2 Merkle operations
+tree-builder = { path = "crates/tree-builder" }
+
 # Testing & mocking
 mockall = "0.13.1"
 
