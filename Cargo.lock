@@ -7172,6 +7172,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "starknet",
+ "starknet-crypto",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",

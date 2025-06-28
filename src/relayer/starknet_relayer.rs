@@ -237,6 +237,7 @@ impl StarknetRelayer {
         _tx: &L2Transaction,
         proof_data: &str,
     ) -> Result<Felt, StarknetRelayerError> {
+        let _ = tx;
         // Parse proof data from JSON
         let _proof: serde_json::Value = serde_json::from_str(proof_data).map_err(|e| {
             StarknetRelayerError::TransactionFailed(format!("Invalid proof data: {}", e))

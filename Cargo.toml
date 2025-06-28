@@ -33,6 +33,7 @@ hyper = "0.14.27"
 
 # Starknet interaction
 starknet = "0.13.0"  # Consider bumping to 0.13 if compatible; avoid 0.7 unless needed for `no-std`.
+starknet-crypto = "0.7.4"  # For cryptographic operations including Poseidon hash
 
 # Ethereum interaction
 ethers = { version = "2.0.14", features = ["rustls", "ws"] }
