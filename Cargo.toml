@@ -59,6 +59,10 @@ alloy = "0.14.0"
 # Testing & mocking
 mockall = "0.13.1"
 
+# Cryptography
+sha3 = "0.10.8"
+futures-util = "0.3.31"
+
 [package.metadata.sqlx]
 offline = true
 
