@@ -16,6 +16,8 @@ const DEFAULT_PAGE_SIZE: u64 = 100;
 const BLOCK_TRACKER_KEY: &str = "l2_burn_events_last_block";
 // Event key for BurnEvent (calculated from event name "BurnEvent")
 const BURN_EVENT_KEY: &str = "0x0099de3f38fed0a76764f614c6bc2b958814813685abc1af6deedab612df44f3";
+// Event key for WithdrawalHashAppended
+const WITHDRAWAL_HASH_APPENDED_EVENT_KEY: &str = "0x01e3ad31c1ae0cf5ec9a8eaf3c540d6cf961c8f4e3bfe1d55a5b92a09e1c9c1e";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitmentLog {
@@ -25,6 +27,16 @@ pub struct CommitmentLog {
     pub user: String,
     pub amount_low: String,
     pub amount_high: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WithdrawalCommitmentLog {
+    pub index: String,
+    pub commitment_hash: String,
+    pub root_hash: String,
+    pub elements_count: String,
+    pub block_number: u64,
+    pub transaction_hash: String,
 }
 
 pub trait TestProvider {
@@ -154,6 +166,86 @@ pub async fn fetch_l2_burn_events<P: TestProvider>(
         start_block,
         latest_block
     );
+
+    Ok(all_events)
+}
+
+pub async fn fetch_l2_withdrawal_commitment_events<P: TestProvider>(
+    config: &AppConfig,
+    db_pool: &PgPool,
+    from_block: u64,
+    provider: &P,
+) -> Result<Vec<WithdrawalCommitmentLog>> {
+    let mut conn = db_pool.acquire().await?;
+    let start_block = match get_last_processed_block(&mut conn, "l2_withdrawal_events_last_block").await
+    {
+        Ok(Some(last)) => last + 1,
+        _ => from_block,
+    };
+
+    let latest_block = get_latest_block_with_retry(provider).await?;
+    let contract_address = Felt::from_hex(&config.contracts.l2_contract_address)
+        .context("Invalid L2 contract address")?;
+    let withdrawal_event_key =
+        Felt::from_hex(WITHDRAWAL_HASH_APPENDED_EVENT_KEY).context("Failed to create event key")?;
+
+    let event_filter = EventFilter {
+        from_block: Some(BlockId::Number(start_block)),
+        to_block: Some(BlockId::Number(latest_block)),
+        address: Some(contract_address),
+        keys: Some(vec![vec![withdrawal_event_key]]),
+    };
+
+    let mut all_events = Vec::new();
+    let mut continuation_token = None;
+
+    loop {
+        let events = fetch_events_with_retry(
+            provider,
+            &event_filter,
+            continuation_token.clone(),
+            DEFAULT_PAGE_SIZE,
+        )
+        .await?;
+
+        for event in &events.events {
+            if event.data.len() >= 4 {
+                let index = event.data[0].to_hex_string();
+                let commitment_hash = event.data[1].to_hex_string();
+                let root_hash = event.data[2].to_hex_string();
+                let elements_count = event.data[3].to_hex_string();
+
+                all_events.push(WithdrawalCommitmentLog {
+                    index,
+                    root_hash,
+                    elements_count,
+                    commitment_hash,
+                    block_number: event.block_number.unwrap_or_default(),
+                    transaction_hash: event.transaction_hash.to_hex_string(),
+                });
+            } else {
+                warn!(
+                    "WithdrawalHashAppended event: invalid data length {}",
+                    event.data.len()
+                )
+            }
+        }
+
+        continuation_token = events.continuation_token;
+        if continuation_token.is_none() {
+            break;
+        }
+    }
+
+    if !all_events.is_empty() {
+        let max_block = all_events
+            .iter()
+            .map(|e| e.block_number)
+            .max()
+            .unwrap_or(start_block);
+        update_last_processed_block(&mut conn, "l2_withdrawal_events_last_block", max_block)
+            .await?;
+    }
 
     Ok(all_events)
 }

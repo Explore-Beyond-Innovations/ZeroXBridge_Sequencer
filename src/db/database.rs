@@ -121,7 +121,7 @@ pub async fn update_deposit_status(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        UPDATE deposits 
+        UPDATE deposits
         SET status = $2, updated_at = NOW()
         WHERE id = $1
         "#,
@@ -137,7 +137,7 @@ pub async fn update_deposit_status(
 pub async fn process_deposit_retry(conn: &mut PgConnection, id: i32) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        UPDATE deposits 
+        UPDATE deposits
         SET retry_count = retry_count + 1, updated_at = NOW()
         WHERE id = $1
         "#,
@@ -152,7 +152,7 @@ pub async fn process_deposit_retry(conn: &mut PgConnection, id: i32) -> Result<(
 pub async fn process_withdrawal_retry(conn: &mut PgConnection, id: i32) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        UPDATE withdrawals 
+        UPDATE withdrawals
         SET retry_count = retry_count + 1,
         updated_at = NOW()
         WHERE id = $1
@@ -172,7 +172,7 @@ pub async fn update_withdrawal_status(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        UPDATE withdrawals 
+        UPDATE withdrawals
         SET status = $2,
         updated_at = NOW()
         WHERE id = $1
