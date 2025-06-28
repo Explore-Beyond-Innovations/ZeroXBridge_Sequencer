@@ -2,6 +2,8 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgConnection, PgPool};
 
+use alloy::primitives::{B256, U256};
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Withdrawal {
     pub id: i32,
@@ -24,6 +26,19 @@ pub struct Deposit {
     pub commitment_hash: String,
     pub status: String, // "pending", "processed", etc.
     pub retry_count: i32,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+//Added DepositHashAppended struct with fields matching the event and database schema.
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct DepositHashAppended {
+    pub id: i32,
+    pub index: i64,
+    pub commitment_hash: Vec<u8>,
+    pub root_hash: Vec<u8>,
+    pub elements_count: i64,
+    pub block_number: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -65,6 +80,29 @@ pub async fn insert_deposit(
         stark_pub_key,
         amount,
         commitment_hash
+    )
+    .fetch_one(conn)
+    .await?;
+
+    Ok(row_id)
+}
+
+// new function
+pub async fn insert_deposit_hash_event(
+    conn: &PgPool,
+    event: &DepositHashAppended,
+) -> Result<i32, sqlx::Error> {
+    let row_id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO deposit_hashes (index, commitment_hash, root_hash, elements_count, block_number)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        "#,
+        event.index,
+        event.commitment_hash,
+        event.root_hash,
+        event.elements_count,
+        event.block_number
     )
     .fetch_one(conn)
     .await?;
@@ -208,7 +246,8 @@ pub async fn update_last_processed_block(
 }
 
 pub async fn get_last_processed_block(
-    conn: &mut PgConnection,
+    //conn: &mut PgConnection,
+    conn: &PgPool,
     key: &str,
 ) -> Result<Option<u64>, sqlx::Error> {
     let record = sqlx::query!(
