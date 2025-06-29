@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, Extension, Json};
+use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
@@ -7,6 +7,8 @@ use crate::db::database::{
     fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
     Withdrawal,
 };
+
+use crate::utils::{compute_commitment_hash, hash_to_hex_string, parse_stark_pubkey};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateWithdrawalRequest {
@@ -30,6 +32,34 @@ pub struct DepositResponse {
 #[derive(Serialize, Deserialize)]
 pub struct WithrawalResponse {
     pub withdrawal_id: i32,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct HashRequest {
+    pub stark_pubkey: String,
+    pub usd_val: u128,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[derive(Serialize, Debug)]
+pub struct HashResponse {
+    pub commitment_hash: String,
+    pub input_data: InputData,
+}
+
+#[derive(Serialize, Debug)]
+pub struct InputData {
+    pub stark_pubkey: String,
+    pub usd_val: u128,
+    pub nonce: u64,
+    pub timestamp: u64,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub details: Option<String>,
 }
 
 pub async fn handle_deposit_post(
@@ -101,4 +131,44 @@ pub async fn hello_world(
     Ok(Json(json!({
         "message": "hello world from zeroxbridge"
     })))
+}
+
+pub async fn compute_hash_handler(
+    Json(payload): Json<HashRequest>,
+) -> Result<Json<HashResponse>, impl IntoResponse> {
+    // Validate and parse the Starknet public key
+    let caller_bytes = match parse_stark_pubkey(&payload.stark_pubkey) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let error_response = ErrorResponse {
+                error: "Invalid stark_pubkey".to_string(),
+                details: Some(e),
+            };
+            return Err((StatusCode::BAD_REQUEST, Json(error_response)));
+        }
+    };
+
+    // Compute the commitment hash
+    let hash = compute_commitment_hash(
+        caller_bytes,
+        payload.usd_val,
+        payload.nonce,
+        payload.timestamp,
+    );
+
+    // Convert to hex string
+    let hex_hash = hash_to_hex_string(hash);
+
+    // Create response
+    let response = HashResponse {
+        commitment_hash: hex_hash,
+        input_data: InputData {
+            stark_pubkey: payload.stark_pubkey.clone(),
+            usd_val: payload.usd_val,
+            nonce: payload.nonce,
+            timestamp: payload.timestamp,
+        },
+    };
+
+    Ok(Json(response))
 }
