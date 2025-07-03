@@ -1,5 +1,5 @@
-use alloy_primitives::{Address, B256, BlockNumber, U256};
 use alloy::rpc::types::Log;
+use alloy_primitives::{Address, BlockNumber, B256, U256};
 use anyhow::Result;
 use mockall::predicate::*;
 use mockall::*;
@@ -15,7 +15,7 @@ mock! {
         fn get_logs(
             &self,
             filter: &alloy::rpc::types::Filter,
-        ) -> Result<Vec<Log<ZeroXBridge::DepositEvent>>, Box<dyn std::error::Error>>;
+        ) -> Result<Vec<Log>, Box<dyn std::error::Error + Send + Sync + 'static>>;
     }
 }
 
@@ -24,6 +24,8 @@ mod tests {
     use super::*;
     use alloy::primitives::{Address, B256, U256};
     use zeroxbridge_sequencer::events::l1_event_watcher::BLOCK_TRACKER_KEY;
+    use std::str::FromStr;
+
     // Helper function to create test database pool
     async fn setup_test_db() -> PgPool {
         let database_url = std::env::var("DATABASE_URL")
@@ -37,7 +39,6 @@ mod tests {
     }
 
     // Helper function to create a test deposit event log
-    // Create a complete Log struct with all required fields
     fn create_test_deposit_log(
         block_number: u64,
         tx_hash: &str,
@@ -54,6 +55,7 @@ mod tests {
                 U256::from_str_hex(commitment).unwrap(),
             ],
         };
+
         Log {
             block_hash: Some(B256::from_str_hex("0x0000000000000000000000000000000000000000000000000000000000001234").unwrap()),
             block_number: Some(block_number),
@@ -121,15 +123,14 @@ mod tests {
             ),
         ];
 
-        // Mock get_logs response
         mock_provider
             .expect_get_logs()
             .returning(move |_| Ok(test_logs.clone()));
 
         let result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_l1_deposit_events(
-            &pool,
+            &mut pool,
             "http://localhost:8545",
-            95u64,
+            95,
             "0x1234567890123456789012345678901234567890",
         )
         .await?;
@@ -139,18 +140,20 @@ mod tests {
         // Check first event
         let first_event = &result[0];
         assert_eq!(first_event.block_number.unwrap(), 100);
-       assert_eq!(first_event.data().commitment, U256::from(1_000_000)); // amount
+        assert_eq!(first_event.inner.amount, U256::from(1_000_000)); // amount
 
         // Check second event
         let second_event = &result[1];
         assert_eq!(second_event.block_number.unwrap(), 101);
-         assert_eq!(second_event.data().commitment, U256::from(2_000_000));// amount
+        assert_eq!(second_event.inner.amount, U256::from(2_000_000)); // amount
 
         // Verify block tracker was updated
-        let last_block =
-            sqlx::query!("SELECT last_block FROM block_trackers WHERE key = $1", BLOCK_TRACKER_KEY)
-                .fetch_one(&pool)
-                .await?;
+        let last_block = sqlx::query!(
+            "SELECT last_block FROM block_trackers WHERE key = $1",
+            "l1_deposit_events_last_block"
+        )
+        .fetch_one(&pool)
+        .await?;
 
         assert_eq!(last_block.last_block, 101);
 
@@ -243,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_logs() -> Result<()> {
-        let pool = setup_test_db().await;
+        let mut pool = setup_test_db().await;
         let mut mock_provider = MockEthereumProvider::new();
 
         // Mock get_logs to return empty vector
@@ -252,16 +255,23 @@ mod tests {
             .returning(move |_| Ok(Vec::new()));
 
         let result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_l1_deposit_events(
-            &pool,
+            &mut pool,
             "http://localhost:8545",
-            95u64,
+            95,
             "0x1234567890123456789012345678901234567890",
         )
         .await;
 
         // Should return error when no logs found
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No logs found"));
+        // Check that the result is an error
+        match result {
+            Ok(_) => panic!("Expected an error but got success"),
+            Err(e) => {
+                let err_string = format!("{}", e);
+                assert!(err_string.contains("No logs found"));
+            }
+        }
 
         // Mock get_logs to return empty vector for DepositHashAppended
         mock_provider
