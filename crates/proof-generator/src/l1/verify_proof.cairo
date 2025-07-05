@@ -7,12 +7,17 @@ fn keccak_hash_single(value: felt252) -> u256 {
     keccak_u256s_be_inputs(array![value_u256].span())
 }
 
-/// Hash two felt252 values using keccak256
+/// Hash two u256 values using keccak256
 /// Returns the full u256 hash without any truncation
-fn keccak_hash_double(left: felt252, right: felt252) -> u256 {
+fn keccak_hash_double(left: u256, right: u256) -> u256 {
+    keccak_u256s_be_inputs(array![left, right].span())
+}
+
+/// Helper to hash a felt252 and a u256 using keccak256
+/// Useful for transitions from felt252 to u256 in the codebase
+fn keccak_hash_felt_u256(left: felt252, right: u256) -> u256 {
     let left_u256: u256 = left.into();
-    let right_u256: u256 = right.into();
-    keccak_u256s_be_inputs(array![left_u256, right_u256].span())
+    keccak_hash_double(left_u256, right)
 }
 
 /// MMR proof structure for keccak256-based verification
@@ -166,7 +171,8 @@ fn bag_peaks(peaks: Span<u256>) -> u256 {
 fn peaks_valid(peaks: Span<u256>, mmr_size: u32, root: u256) -> bool {
     let bagged_peaks = bag_peaks(peaks);
     let mmr_size_felt: felt252 = mmr_size.into();
-    let computed_root = keccak_hash_double(mmr_size_felt, bagged_peaks);
+    let mmr_size_u256: u256 = mmr_size_felt.into();
+    let computed_root = keccak_hash_double(mmr_size_u256, bagged_peaks);
     computed_root == root
 }
 
@@ -218,8 +224,10 @@ mod tests {
         assert(hash == hash2, 'Hash should be deterministic');
         
         // Test different order produces different results
-        let hash1 = keccak_hash_double(10, 20);
-        let hash2 = keccak_hash_double(20, 10);
+        let value1_u256: u256 = 10.into();
+        let value2_u256: u256 = 20.into();
+        let hash1 = keccak_hash_double(value1_u256, value2_u256);
+        let hash2 = keccak_hash_double(value2_u256, value1_u256);
         assert(hash1 != hash2, 'Different order should differ');
         
         // Test handling of large values that would exceed felt252 range
@@ -228,6 +236,12 @@ mod tests {
         let large_hash = keccak_hash_single(large_value);
         // Just verify we can compute it without overflow - actual value will vary
         assert(large_hash != 0, 'Large hash should be computed');
+        
+        // Test the helper function for felt252 + u256 hashing
+        let felt_value = 42;
+        let u256_value = u256 { low: 123_u128, high: 456_u128 };
+        let helper_hash = keccak_hash_felt_u256(felt_value, u256_value);
+        assert(helper_hash != 0, 'Helper hash should work');
     }
 
     #[test]
@@ -257,12 +271,14 @@ mod tests {
         let mut single_peak = ArrayTrait::new();
         single_peak.append(peak1);
         let mmr_size = 1_u32;
-        let expected_root = keccak_hash_double(mmr_size.into(), peak1);
+        let mmr_size_u256: u256 = mmr_size.into();
+        let expected_root = keccak_hash_double(mmr_size_u256, peak1);
         assert(peaks_valid(single_peak.span(), mmr_size, expected_root), 'Peaks should be valid');
         
         // Test empty peaks
         let mut empty_peaks = ArrayTrait::new();
-        assert(bag_peaks(empty_peaks.span()) == 0, 'Empty peaks should return 0');
+        let zero_u256 = u256 { low: 0_u128, high: 0_u128 };
+        assert(bag_peaks(empty_peaks.span()) == zero_u256, 'Empty peaks should return 0');
         // Create a distinct u256 to test with empty array
         let test_u256 = u256 { low: 123_u128, high: 0_u128 };
         assert(!peaks_contains(empty_peaks.span(), test_u256), 'Empty should not contain');
@@ -284,7 +300,8 @@ mod tests {
         peaks.append(peak_hash);
         
         let mmr_size = 3_u32;
-        let root = keccak_hash_double(mmr_size.into(), peak_hash);
+        let mmr_size_u256: u256 = mmr_size.into();
+        let root = keccak_hash_double(mmr_size_u256, peak_hash);
         
         // Test verify_proof with MmrProof struct
         let mut sibling_hashes_copy = ArrayTrait::new();
@@ -314,7 +331,8 @@ mod tests {
         peaks.append(peak_hash);
         
         let mmr_size = 3_u32;
-        let root = keccak_hash_double(mmr_size.into(), peak_hash);
+        let mmr_size_u256: u256 = mmr_size.into();
+        let root = keccak_hash_double(mmr_size_u256, peak_hash);
         
         // Test invalid leaf
         let mut sibling_hashes_copy = ArrayTrait::new();
@@ -342,7 +360,8 @@ mod tests {
         proof.append(sibling_hash);
         
         let computed_peak = compute_peak_from_leaf(1, leaf_value, proof.span());
-        let expected_peak = keccak_hash_double(keccak_hash_single(leaf_value), sibling_hash);
+        let leaf_hash = keccak_hash_single(leaf_value);
+        let expected_peak = keccak_hash_double(leaf_hash, sibling_hash);
         
         assert(computed_peak == expected_peak, 'Peak computation failed');
     }
