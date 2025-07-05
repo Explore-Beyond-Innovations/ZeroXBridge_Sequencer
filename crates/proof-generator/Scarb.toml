@@ -6,9 +6,16 @@ edition = "2024_07"
 # See more keys and their definitions at https://docs.swmansion.com/scarb/docs/reference/manifest.html
 
 [dependencies]
+starknet = "2.9.2"
+cairo_lib = { git = "https://github.com/HerodotusDev/cairo-lib.git", rev = "93ebbac8997452255c9b12a13ad75dece577850f" }
 
 [dev-dependencies]
 cairo_test = "2.9.2"
 
+[[target.starknet-contract]]
+sierra = true
+casm = true
+
 [cairo]
 sierra-replace-ids = true
+enable-gas = true

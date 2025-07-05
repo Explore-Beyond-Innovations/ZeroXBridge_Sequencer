@@ -4,3 +4,11 @@ version = 1
 [[package]]
 name = "cairo1"
 version = "0.1.0"
+dependencies = [
+ "cairo_lib",
+]
+
+[[package]]
+name = "cairo_lib"
+version = "0.2.0"
+source = "git+https://github.com/HerodotusDev/cairo-lib.git?rev=93ebbac8997452255c9b12a13ad75dece577850f#93ebbac8997452255c9b12a13ad75dece577850f"
