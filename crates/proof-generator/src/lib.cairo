@@ -1,4 +1,4 @@
-mod l1;
+mod l2;
 
 /// Verifies a Merkle proof for a given leaf hash against an expected root hash
 ///
@@ -29,7 +29,7 @@ fn verify_commitment_in_root(
             } else {
                 core::pedersen::pedersen(*proof_element, computed_root)
             };
-    }
+    };
 
     assert(computed_root == new_root, 'Computed root does not match');
 
@@ -59,7 +59,7 @@ fn main(input: Array<felt252>) -> Array<felt252> {
     let mut proof = ArrayTrait::new();
     for i in 2..input.len() {
         proof.append(*input.at(i));
-    }
+    };
     let verified_root = verify_commitment_in_root(*input.at(1), proof, *input.at(0));
 
     let mut result_array = ArrayTrait::new();
@@ -67,9 +67,11 @@ fn main(input: Array<felt252>) -> Array<felt252> {
     result_array
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::verify_commitment_in_root;
+    use super::l2::verify_proof::{verify_proof, verify_proof_legacy, MmrProof};
 
     // Helper function to build a simple 4-leaf tree for tests
     fn build_test_tree() -> (felt252, felt252, felt252, felt252, felt252, felt252, felt252) {
@@ -151,6 +153,22 @@ mod tests {
 
         verify_commitment_in_root(leaf_0, empty_proof, root);
     }
+
+    #[test]
+    #[available_gas(3000000)]
+    fn test_l2_verify_proof_integration() {
+        // Test single element MMR case
+        let leaf = 42;
+        let leaf_index = 0;
+        let proof: MmrProof = array![].span();
+        let root = leaf; // For single element MMR, root equals leaf
+        let merkle_size = 1;
+        let peaks = array![leaf];
+
+        let is_valid = verify_proof(leaf, leaf_index, proof, root, merkle_size, peaks);
+        assert(is_valid, 'L2 verify_proof failed');
+    }
+
 
     #[test]
     #[available_gas(2000000)]
