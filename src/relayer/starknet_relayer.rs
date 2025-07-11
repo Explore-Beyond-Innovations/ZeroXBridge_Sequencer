@@ -234,78 +234,93 @@ impl StarknetRelayer {
     // Relay transaction to Starknet
     pub async fn relay_to_starknet(
         &self,
-        _tx: &L2Transaction,
+        tx: &L2Transaction,
         proof_data: &str,
     ) -> Result<Felt, StarknetRelayerError> {
-        let _ = _tx;
         // Parse proof data from JSON
-        let _proof: serde_json::Value = serde_json::from_str(proof_data).map_err(|e| {
+        let proof: serde_json::Value = serde_json::from_str(proof_data).map_err(|e| {
             StarknetRelayerError::TransactionFailed(format!("Invalid proof data: {}", e))
         })?;
 
-        // Extract components needed for the call
-        // Note: The exact structure depends on your proof format and contract interface
+        // Extract withdrawal ID from transaction
+        let withdrawal_id = tx.id.clone();
+        
+        // Extract proof array and merkle root from proof data
+        let proof_array = match proof.get("proof") {
+            Some(array) if array.is_array() => {
+                let mut felts = Vec::new();
+                for item in array.as_array().unwrap() {
+                    if let Some(s) = item.as_str() {
+                        felts.push(Felt::from_hex(s).map_err(|_| {
+                            StarknetRelayerError::TransactionFailed("Invalid proof element".to_string())
+                        })?);
+                    } else {
+                        return Err(StarknetRelayerError::TransactionFailed(
+                            "Proof array contains non-string elements".to_string(),
+                        ));
+                    }
+                }
+                felts
+            }
+            _ => return Err(StarknetRelayerError::ProofDataMissing),
+        };
 
-        // Example call assuming your L2 contract has a function like:
-        // func process_withdrawal(
-        //     withdrawal_id: felt,
-        //     proof_data: Array<felt>,
-        //     merkle_root: felt
-        // )
+        let merkle_root = match proof.get("merkle_root") {
+            Some(value) => {
+                if let Some(s) = value.as_str() {
+                    Felt::from_hex(s).map_err(|_| {
+                        StarknetRelayerError::TransactionFailed("Invalid merkle root".to_string())
+                    })?
+                } else {
+                    return Err(StarknetRelayerError::ProofDataMissing);
+                }
+            }
+            _ => return Err(StarknetRelayerError::ProofDataMissing),
+        };
 
-        // let mut calldata = vec![
-        //     withdrawal_id,
-        //     Felt::from_dec_str(&proof_array.len().to_string()).map_err(|_| {
-        //         StarknetRelayerError::TransactionFailed("Invalid proof length".to_string())
-        //     })?,
-        // ];
+        // Initialize calldata with basic fields
+        let mut calldata = Vec::new();
+        
+        // Add withdrawal ID as a felt
+        calldata.push(Felt::from_u64(withdrawal_id as u64));
+        
+        // Add proof array length
+        calldata.push(Felt::from_u64(proof_array.len() as u64));
 
-        // calldata.extend(proof_array.clone());
-        // calldata.push(merkle_root);
+        // Extend calldata with proof array elements
+        calldata.extend(proof_array);
 
-        // let calls = vec![Call {
-        //     to: Felt::from_hex_be(&self.config.bridge_contract_address)
-        //         .map_err(|_| StarknetRelayerError::InvalidContractAddress)?,
-        //     selector: cairo_short_string_to_felt("process_withdrawal")
-        //         .map_err(|_| StarknetRelayerError::SelectorParseFailed)?,
-        //     calldata,
-        // }];
+        // Add merkle root at the end
+        calldata.push(merkle_root);
 
-        // let merkle_root = match proof.get("merkle_root") {
-        //     Some(value) => {
-        //         if let Some(s) = value.as_str() {
-        //             Felt::from_hex_be(s).map_err(|_| {
-        //                 StarknetRelayerError::TransactionFailed("Invalid merkle root".to_string())
-        //             })?
-        //         } else {
-        //             return Err(StarknetRelayerError::ProofDataMissing);
-        //         }
-        //     }
-        //     _ => return Err(StarknetRelayerError::ProofDataMissing),
-        // };
+        // Get the contract address
+        let contract_address = Felt::from_hex(&self.config.bridge_contract_address)
+            .map_err(|_| StarknetRelayerError::InvalidContractAddress)?;
 
-        // // Initialize calldata with basic fields
-        // let mut calldata = vec![
-        //     withdrawal_id,
-        //     Felt::from_dec_str(&proof_array.len().to_string()).unwrap(),
-        // ];
+        // Create the call
+        use starknet::core::types::{Call, FunctionCall};
+        use starknet::macros::selector;
+        
+        let calls = vec![Call {
+            to: contract_address,
+            selector: selector!("process_withdrawal"),
+            calldata,
+        }];
 
-        // // Extend calldata with proof array elements
-        // calldata.extend(proof_array.clone());
-
-        // // Add merkle root at the end
-        // calldata.push(merkle_root);
-
-        // // Create call to the L2 bridge contract
-        // let calls = vec![Call {
-        //     to: self.account.address(), // Correctly use account address or contract address if needed
-        //     selector: cairo_short_string_to_felt("process_withdrawal").unwrap(),
-        //     calldata,
-        // }];
-
-        // Call transaction
-
-        let result = Felt::from_str(&"transaction".to_string())?;
+        // Execute the transaction
+        info!("Sending transaction to Starknet contract: {}", &self.config.bridge_contract_address);
+        
+        // Execute the call and get the transaction hash
+        let result = match self.account.execute(calls).send().await {
+            Ok(result) => {
+                info!("Transaction sent successfully with hash: {}", result.transaction_hash);
+                result.transaction_hash
+            }
+            Err(e) => {
+                error!("Failed to send transaction: {:?}", e);
+                return Err(StarknetRelayerError::TransactionFailed(format!("Failed to send transaction: {}", e)));
+            }
+        };
 
         Ok(result)
     }
@@ -356,16 +371,6 @@ impl StarknetRelayer {
 
             // Sleep for a short duration before retrying
             tokio::time::sleep(Duration::from_secs(2)).await;
-
-            // Timeout check
-            if start_time.elapsed() > timeout {
-                return Err(StarknetRelayerError::TimeoutError(
-                    "Transaction confirmation timed out.".to_string(),
-                ));
-            }
-
-            // Sleep for a short duration before retrying
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
