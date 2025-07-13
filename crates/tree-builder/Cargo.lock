@@ -2807,6 +2807,8 @@ dependencies = [
  "accumulators",
  "async-trait",
  "hex",
+ "num-bigint",
+ "num-traits",
  "thiserror",
  "tokio",
 ]

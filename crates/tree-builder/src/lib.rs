@@ -1,7 +1,7 @@
 use std::{array::TryFromSliceError, sync::Arc};
 
 use accumulators::{
-    hasher::keccak::KeccakHasher,
+    hasher::stark_poseidon,
     mmr::{MMRError, Proof, MMR},
     store::{memory::InMemoryStore, InStoreTableError, StoreError},
 };
@@ -19,6 +19,10 @@ pub enum TreeBuilderError {
     HexError(String),
     #[error("Failed to convert to array: {0}")]
     ConversionError(String),
+    #[error("Invalid leaf hash: {0}")]
+    InvalidLeafHash(String),
+    #[error(transparent)]
+    FromHexError(#[from] hex::FromHexError),
 }
 
 pub type Result<T> = std::result::Result<T, TreeBuilderError>;
@@ -30,20 +34,33 @@ pub struct MerkleTreeBuilder {
 
 impl MerkleTreeBuilder {
     fn decode_hex(hex_str: &str) -> Result<[u8; 32]> {
-        hex::decode(&hex_str[2..])
-            .map_err(|e| TreeBuilderError::HexError(e.to_string()))
-            .and_then(|bytes| {
-                bytes.as_slice().try_into().map_err(|e: TryFromSliceError| {
-                    TreeBuilderError::ConversionError(e.to_string())
-                })
-            })
+        let hex_to_decode = if hex_str.starts_with("0x") {
+            &hex_str[2..]
+        } else {
+            hex_str
+        };
+        let mut bytes = hex::decode(hex_to_decode)?;
+
+        // Pad with zeros if needed
+        while bytes.len() < 32 {
+            bytes.insert(0, 0);
+        }
+        // Truncate if too long
+        if bytes.len() > 32 {
+            bytes.truncate(32);
+        }
+
+        bytes
+            .as_slice()
+            .try_into()
+            .map_err(|e: TryFromSliceError| TreeBuilderError::ConversionError(e.to_string()))
     }
 
     /// Creates a new MerkleTreeBuilder instance
     pub fn new() -> Self {
         let store = InMemoryStore::default();
         let store_rc = Arc::new(store);
-        let hasher = Arc::new(KeccakHasher::new());
+        let hasher = Arc::new(stark_poseidon::StarkPoseidonHasher::new(None));
 
         Self {
             mmr: MMR::new(store_rc, hasher, None),
@@ -160,15 +177,18 @@ mod tests {
     #[tokio::test]
     async fn test_basic_tree_operations() -> Result<()> {
         let mut builder = MerkleTreeBuilder::new();
-        
+
         // Test single leaf
         let leaf1 = [1u8; 32];
         builder.build_merkle(vec![leaf1]).await?;
-        
+
         // Get proof for leaf1
         let proof1 = builder.get_proof(leaf1).await?;
         assert!(proof1.is_some(), "Should generate proof for existing leaf");
-        assert!(builder.verify_proof(proof1.unwrap(), leaf1).await?, "Proof should be valid");
+        assert!(
+            builder.verify_proof(proof1.unwrap(), leaf1).await?,
+            "Proof should be valid"
+        );
 
         // Add second leaf
         let leaf2 = [2u8; 32];
@@ -177,14 +197,19 @@ mod tests {
         // Verify both leaves have valid proofs
         for leaf in [leaf1, leaf2] {
             let proof = builder.get_proof(leaf).await?.unwrap();
-            assert!(builder.verify_proof(proof, leaf).await?, 
-                "Proof should be valid for leaf {:?}", leaf);
+            assert!(
+                builder.verify_proof(proof, leaf).await?,
+                "Proof should be valid for leaf {:?}",
+                leaf
+            );
         }
 
         // Test non-existent leaf
         let fake_leaf = [99u8; 32];
-        assert!(builder.get_proof(fake_leaf).await?.is_none(), 
-            "Should not find proof for non-existent leaf");
+        assert!(
+            builder.get_proof(fake_leaf).await?.is_none(),
+            "Should not find proof for non-existent leaf"
+        );
 
         Ok(())
     }
