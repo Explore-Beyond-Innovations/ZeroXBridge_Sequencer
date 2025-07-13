@@ -1,19 +1,17 @@
-use axum::{routing::post, Extension, Router};
+use dotenv::dotenv;
 use sqlx::postgres::PgPoolOptions;
-use std::{
-    env,
-    path::{Path, PathBuf},
-    sync::Arc,
+use std::sync::Arc;
+use zeroxbridge_sequencer::api::routes::AppState;
+use zeroxbridge_sequencer::config::{
+    AppConfig, ContractConfig, Contracts, DatabaseConfig, EthereumConfig, HerodotusConfig,
+    LoggingConfig, MerkleConfig, OracleConfig, QueueConfig, RelayerConfig, ServerConfig,
+    StarknetConfig,
 };
-use zeroxbridge_sequencer::api::{
-    handlers::{handle_deposit_post, handle_get_pending_deposits},
-    routes::AppState,
-};
-use zeroxbridge_sequencer::config;
 
-pub async fn create_test_app() -> Router {
-    let configuration = config::load_config(Some(&Path::new("config_file_path")));
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for tests");
+pub async fn create_test_app() -> Arc<AppState> {
+    dotenv().ok();
+    let configuration = create_test_config();
+    let database_url = configuration.database.get_db_url();
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -21,12 +19,63 @@ pub async fn create_test_app() -> Router {
         .await
         .expect("Failed to connect to test database");
 
-    let state = Arc::new(AppState { db: pool.clone() });
+    let state = Arc::new(AppState {
+        db: pool.clone(),
+        config: configuration.clone(),
+    });
 
-    Router::new()
-        .route(
-            "/deposit",
-            post(handle_deposit_post).get(handle_get_pending_deposits),
-        )
-        .layer(Extension(state))
+    state
+}
+
+// Helper function to create test config
+pub fn create_test_config() -> AppConfig {
+    AppConfig {
+        contract: ContractConfig {
+            name: String::new(),
+        },
+        contracts: Contracts {
+            l1_contract_address: "0x123".to_string(),
+            l2_contract_address: "0x456".to_string(),
+        },
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            server_url: "http://localhost:8080".to_string(),
+        },
+        database: DatabaseConfig { max_connections: 5 },
+        ethereum: EthereumConfig {
+            chain_id: 11155111, // Sepolia testnet
+            confirmations: 1,
+        },
+        starknet: StarknetConfig {
+            chain_id: "SN_SEPOLIA".to_string(),
+        },
+        relayer: RelayerConfig {
+            max_retries: 3,
+            retry_delay_seconds: 60,
+            gas_limit: 300000,
+        },
+        queue: QueueConfig {
+            process_interval_sec: 60,
+            wait_time_seconds: 30,
+            max_retries: 3,
+            initial_retry_delay_sec: 60,
+            retry_delay_seconds: 60,
+            merkle_update_confirmations: 1,
+        },
+        merkle: MerkleConfig {
+            tree_depth: 32,
+            cache_size: 1000,
+        },
+        logging: LoggingConfig {
+            level: "info".to_string(),
+            file: "logs/zeroxbridge.log".to_string(),
+        },
+        oracle: OracleConfig {
+            tolerance_percent: Some(0.01), // 1% tolerance
+            polling_interval_seconds: 60,
+        },
+        herodotus: HerodotusConfig {
+            herodotus_endpoint: "https://herodotus.example.com/api".to_string(),
+        },
+    }
 }

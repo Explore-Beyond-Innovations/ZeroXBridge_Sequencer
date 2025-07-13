@@ -17,3 +17,4 @@ pub mod relayer {
 
 pub mod events;
 pub mod proof_client;
+pub mod utils;

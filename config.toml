@@ -10,7 +10,7 @@ l1_contract_address = "0x0000000000000000000000000000000000000000"  # Replace wi
 l2_contract_address = "0x0000000000000000000000000000000000000000"  # Replace with actual L2 contract
 
 [server]
-host = "http://localhost:4000"
+host = "127.0.0.1"
 server_url = "http://127.0.0.1:4000"
 
 [database]
@@ -23,27 +23,30 @@ confirmations = 3
 [starknet]
 chain_id = "0x534e5f4d41494e"  # SN_MAIN
 
-[prover]
-
 [relayer]
 max_retries = 5
 retry_delay_seconds = 10
 gas_limit = 500000
 
 [queue]
-# Settings for queue delays and retries
+process_interval_sec = 5
 wait_time_seconds = 5
 max_retries = 3
+initial_retry_delay_sec = 10
 retry_delay_seconds = 15
+merkle_update_confirmations = 5
 
 [merkle]
 tree_depth = 32
 cache_size = 1000
 
 [logging]
-level = "info"  # Options: debug, info, warn, error
+level = "info"              # Options: debug, info, warn, error
 file = "logs/sequencer.log"
 
 [oracle]
-tolerance_percent = 0.01      # 1%
-polling_interval_seconds = 60 # 1 minute
+tolerance_percent = 0.01    # 1%
+polling_interval_seconds = 60
+
+[herodotus]
+herodotus_endpoint = "https://herodotus.example.com/api"

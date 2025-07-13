@@ -8,10 +8,7 @@ use zeroxbridge_sequencer::http::client::submit_sharp_proof_job;
 fn setup_dummy_files() -> Result<()> {
     fs::create_dir_all("tmp/target/dev")?;
     fs::create_dir_all("tmp")?;
-    fs::write(
-        "tmp/target/dev/cairo1.sierra.json",
-        r#"{"dummy":"data"}"#,
-    )?;
+    fs::write("tmp/target/dev/cairo1.sierra.json", r#"{"dummy":"data"}"#)?;
     fs::write("tmp/input.cairo1.txt", "dummy input")?;
     Ok(())
 }
