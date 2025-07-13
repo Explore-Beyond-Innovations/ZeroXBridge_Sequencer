@@ -1,37 +1,32 @@
-//! Example demonstrating L2 Merkle tree operations with Poseidon hashing
-//!
-//! This example shows how to:
-//! 1. Build an L2 Merkle tree from withdrawal commitment hashes
-//! 2. Generate Merkle proofs for specific commitments
-//! 3. Verify proofs for zk-STARK proof generation
+use num_bigint::BigUint;
+use num_traits::Num;
+use tree_builder::{MerkleTreeBuilder, Result, TreeBuilderError};
 
-use tree_builder::{L2MerkleTree, Result};
+#[tokio::main]
+pub async fn main() -> Result<()> {
+    let leaf_one = felt252_to_hex(
+        "3085182978037364507644541379307921604860861694664657935759708330416374536741",
+    )?;
+    let leaf_two = felt252_to_hex(
+        "1515056012081702936544604035253985638654900467413915026150760243646139951112",
+    )?;
+    let leaf_three = felt252_to_hex(
+        "2323060256672561756159719169078931556938075970039758487114302926228175567841",
+    )?;
+    let leaf_four = felt252_to_hex(
+        "884555293850013781657518953358027212692898536740606299472615094634234324840",
+    )?;
 
-fn main() -> Result<()> {
-    println!("L2 Merkle Tree Example\n");
+    let commitment_hashes = vec![leaf_one, leaf_two, leaf_three, leaf_four];
+    let expected_root = felt252_to_hex(
+        "423282815349921591262243120076891478879135827696329377607682678064132796520",
+    )?;
 
-    // Sample commitment hashes (32 bytes each, hex encoded without 0x prefix)
-    let commitment_hashes = vec![
-        "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-        "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-        "0987654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba",
-    ];
-
-    println!(
-        "Building L2 Merkle tree with {} commitment hashes:",
-        commitment_hashes.len()
-    );
-    for (i, hash) in commitment_hashes.iter().enumerate() {
-        println!("  [{}]: {}", i, hash);
-    }
-
-    // Parse hex strings to bytes
     let mut leaves = Vec::new();
     for hash_str in &commitment_hashes {
         let bytes = hex::decode(hash_str)?;
         if bytes.len() != 32 {
-            return Err(tree_builder::TreeBuilderError::InvalidLeafHash(format!(
+            return Err(TreeBuilderError::InvalidLeafHash(format!(
                 "Expected 32 bytes, got {}",
                 bytes.len()
             )));
@@ -41,37 +36,37 @@ fn main() -> Result<()> {
         leaves.push(array);
     }
 
-    // Build the Merkle tree
-    let tree = L2MerkleTree::build_l2_merkle(leaves)?;
-    println!("\nTree built successfully!");
+    let mut builder = MerkleTreeBuilder::new();
+    builder.build_merkle(leaves).await?;
 
-    // Get the root
-    let root = tree.get_root().expect("Tree should have a root");
-    println!("Root: {}", hex::encode(root));
+    let root = builder.get_root().await?;
+    let root_hex = hex::encode(root);
 
-    // Generate proofs for each commitment
-    println!("\nGenerating Merkle Proofs:");
-    for (i, leaf) in tree.get_leaves().iter().enumerate() {
-        match tree.get_proof(*leaf) {
-            Ok(proof) => {
-                println!("\nProof for commitment [{}]:", i);
-                println!("  Hash: {}", hex::encode(leaf));
-                println!("  Proof length: {}", proof.siblings.len());
-                println!("  Leaf index: {}", proof.index);
-
-                // Verify the proof
-                let is_valid = proof.verify()?;
-                println!(
-                    "  Proof verification: {}",
-                    if is_valid { "VALID" } else { "INVALID" }
-                );
-            }
-            Err(e) => {
-                println!("Failed to generate proof for commitment [{}]: {}", i, e);
-            }
-        }
+    if expected_root != root_hex {
+        println!(
+            "Root mismatch! Expected: {}, Got: {}",
+            expected_root, root_hex
+        );
+        std::process::exit(1);
+    } else {
+        println!("Root matches! {}", root_hex);
     }
 
-    println!("\nExample completed successfully");
     Ok(())
+}
+
+fn felt252_to_hex(felt: &str) -> Result<String> {
+    let big_uint = BigUint::from_str_radix(felt, 10).map_err(|e| {
+        TreeBuilderError::InvalidLeafHash(format!("Failed to parse felt252: {}", e))
+    })?;
+
+    let mut hex_str = format!("{:x}", big_uint);
+    if hex_str.len() % 2 != 0 {
+        hex_str = format!("0{}", hex_str);
+    }
+    while hex_str.len() < 64 {
+        hex_str = format!("0{}", hex_str);
+    }
+
+    Ok(hex_str)
 }

@@ -6310,6 +6310,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "num-bigint",
+ "num-traits",
  "serde",
  "serde_json",
  "starknet-crypto",
