@@ -1,35 +1,33 @@
-use crate::db::database::{
-    get_last_processed_block, insert_deposit_hash_event, update_last_processed_block,
-    DepositHashAppended,
+use alloy::{
+    primitives::Address,
+    providers::Provider,
+    rpc::types::{Filter, Log},
+    sol,
+    sol_types::SolEvent,
 };
 use anyhow::Result;
 use sqlx::PgPool;
 use tracing::log::{debug, warn};
 
-use std::str::FromStr;
-
-use alloy::{
-    primitives::{Address, B256},
-    providers::{Provider, ProviderBuilder},
-    rpc::types::{Filter, Log},
-    sol,
-    sol_types::SolEvent,
+use crate::db::database::{
+    get_last_processed_block, insert_deposit_hash_event, update_last_processed_block,
+    DepositHashAppended,
 };
 
-// Name of the table for storing block tracker
 pub const BLOCK_TRACKER_KEY: &str = "l1_deposit_events_last_block";
 pub const DEPOSIT_HASH_BLOCK_TRACKER_KEY: &str = "l1_deposit_hash_events_last_block";
 
 sol! {
     #[derive(Debug)]
     contract ZeroXBridge {
-        enum AssetType {
-            ETH,
-            ERC20
-        }
+        enum AssetType { ETH, ERC20 }
 
         event DepositEvent(
-            address indexed token, AssetType assetType, uint256 amount, address indexed user, bytes32 commitmentHash
+            address indexed token,
+            AssetType assetType,
+            uint256 amount,
+            address indexed user,
+            bytes32 commitmentHash
         );
 
         event DepositHashAppended(
@@ -41,11 +39,12 @@ sol! {
     }
 }
 
-pub async fn fetch_l1_deposit_events(
+/// Fetch both kinds of logs in one shot, reading & updating DB trackers.
+pub async fn fetch_l1_deposit_events<P: Provider>(
     db_pool: &mut PgPool,
-    rpc_url: &str,
+    provider: &P,
     from_block: u64,
-    contract_addr: &str,
+    contract_addr: Address,
 ) -> Result<
     (
         Vec<Log<ZeroXBridge::DepositEvent>>,
@@ -53,130 +52,95 @@ pub async fn fetch_l1_deposit_events(
     ),
     Box<dyn std::error::Error>,
 > {
-    // Load last processed block for DepositEvent
-    let from_block_deposit = match get_last_processed_block(db_pool, BLOCK_TRACKER_KEY).await {
-        Ok(Some(last_block)) => last_block + 1,
-        Ok(None) => from_block,
-        Err(e) => {
-            warn!("Failed to get last processed block for DepositEvent: {}", e);
-            from_block
-        }
-    };
+    // figure starting points
+    let from_deposit = get_last_processed_block(db_pool, BLOCK_TRACKER_KEY)
+        .await?
+        .map(|b| (b + 1) as u64)
+        .unwrap_or(from_block);
 
-    // Load last processed block for DepositHashAppended
-    let from_block_hash =
-        match get_last_processed_block(db_pool, DEPOSIT_HASH_BLOCK_TRACKER_KEY).await {
-            Ok(Some(last_block)) => last_block + 1,
-            Ok(None) => from_block,
-            Err(e) => {
-                warn!(
-                    "Failed to get last processed block for DepositHashAppended: {}",
-                    e
-                );
-                from_block
-            }
+    let from_hash = get_last_processed_block(db_pool, DEPOSIT_HASH_BLOCK_TRACKER_KEY)
+        .await?
+        .map(|b| (b + 1) as u64)
+        .unwrap_or(from_block);
+
+    // pull raw logs
+    let deposits = fetch_events_logs_at_address::<_, P>(
+        provider,
+        from_deposit,
+        contract_addr,
+        ZeroXBridge::DepositEvent::SIGNATURE,
+    )
+    .await?;
+
+    let hashes = fetch_events_logs_at_address::<_, P>(
+        provider,
+        from_hash,
+        contract_addr,
+        ZeroXBridge::DepositHashAppended::SIGNATURE,
+    )
+    .await?;
+
+    for log in &hashes {
+        let e: &ZeroXBridge::DepositHashAppended = log.data();
+        let record = DepositHashAppended {
+            id: 0,
+            index: e.index.to::<u64>() as i64,
+            commitment_hash: e.commitmentHash.0.to_vec(),
+            root_hash: e.rootHash.0.to_vec(),
+            elements_count: e.elementsCount.to::<u64>() as i64,
+            block_number: log.block_number.unwrap() as i64,
+            created_at: Some(chrono::Utc::now()),
+            updated_at: Some(chrono::Utc::now()),
         };
-
-    // Fetch DepositEvent logs
-    let event_name = ZeroXBridge::DepositEvent::SIGNATURE;
-    let deposit_logs =
-        fetch_events_logs_at_address(rpc_url, from_block_deposit, contract_addr, event_name)
-            .await?;
-
-    // Fetch and store DepositHashAppended logs
-    let hash_logs =
-        fetch_deposit_hash_appended_events(db_pool, rpc_url, from_block_hash, contract_addr)
-            .await?;
-    // Update last processed block for DepositEvent
-    if let Some(last_log) = deposit_logs.last() {
-        let block_number = last_log.block_number.ok_or("Block number not found")?;
-        if let Err(e) = update_last_processed_block(db_pool, BLOCK_TRACKER_KEY, block_number).await
-        {
-            warn!(
-                "Failed to update last processed block for DepositEvent: {}",
-                e
-            );
-        }
-    }
-
-    Ok((deposit_logs, hash_logs))
-}
-
-async fn fetch_events_logs_at_address<T>(
-    rpc_url: &str,
-    from_block: u64,
-    contract_addr: &str,
-    event_name: &str,
-) -> Result<Vec<Log<T>>, Box<dyn std::error::Error>>
-where
-    T: alloy::sol_types::SolEvent,
-{
-    let contract_addr = Address::from_str(contract_addr)?;
-
-    let provider = ProviderBuilder::new().connect(rpc_url).await?;
-
-    let filter = Filter::new()
-        .address(contract_addr)
-        .event(event_name)
-        .from_block(from_block);
-
-    let logs = provider.get_logs(&filter).await?;
-    let decoded_logs = logs
-        .into_iter()
-        .map(|log| log.log_decode::<T>().map_err(|e| Box::new(e)))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(decoded_logs)
-}
-
-pub async fn fetch_deposit_hash_appended_events(
-    db_pool: &PgPool,
-    rpc_url: &str,
-    from_block: u64,
-    contract_addr: &str,
-) -> Result<Vec<Log<ZeroXBridge::DepositHashAppended>>, Box<dyn std::error::Error>> {
-    let event_name = ZeroXBridge::DepositHashAppended::SIGNATURE;
-    let logs = fetch_events_logs_at_address(rpc_url, from_block, contract_addr, event_name).await?;
-
-    for log in &logs {
-        let event: &ZeroXBridge::DepositHashAppended = log.data();
-        let deposit_hash_event = DepositHashAppended {
-            id: 0, // Set by database
-            index: event.index.to_string().parse::<u64>().unwrap() as i64,
-            commitment_hash: event.commitmentHash.0.to_vec(),
-            root_hash: event.rootHash.0.to_vec(),
-            elements_count: event.elementsCount.to_string().parse::<u64>().unwrap() as i64,
-            block_number: log.block_number.ok_or("Block number not found")? as i64,
-            created_at: None, // Set by database
-            updated_at: None, // Set by database
-        };
-
-        if let Err(e) = insert_deposit_hash_event(db_pool, &deposit_hash_event).await {
-            warn!("Failed to insert DepositHashAppended event: {}", e);
+        if let Err(err) = insert_deposit_hash_event(db_pool, &record).await {
+            warn!("Failed to insert hash event: {}", err);
         } else {
             debug!(
-                "Inserted DepositHashAppended: index={}, commitment_hash={:x}, root_hash={:x}, elements_count={}",
-                deposit_hash_event.index,
-                B256::from_slice(&deposit_hash_event.commitment_hash),
-                B256::from_slice(&deposit_hash_event.root_hash),
-                deposit_hash_event.elements_count
+                "Inserted hash event idx={} count={}",
+                record.index, record.elements_count
             );
         }
     }
 
-    // Update last processed block
-    if let Some(last_log) = logs.last() {
-        let block_number = last_log.block_number.ok_or("Block number not found")?;
-        // let mut conn = db_pool.acquire().await?;
-        if let Err(e) =
-            update_last_processed_block(db_pool, DEPOSIT_HASH_BLOCK_TRACKER_KEY, block_number).await
+    // update trackers
+    if let Some(last) = deposits.last() {
+        let bn = last.block_number.unwrap() as i64;
+        if let Err(err) = update_last_processed_block(db_pool, BLOCK_TRACKER_KEY, bn as u64).await {
+            warn!("Failed to update deposit tracker: {}", err);
+        }
+    }
+    if let Some(last) = hashes.last() {
+        let bn = last.block_number.unwrap() as i64;
+        if let Err(err) =
+            update_last_processed_block(db_pool, DEPOSIT_HASH_BLOCK_TRACKER_KEY, bn as u64).await
         {
-            warn!(
-                "Failed to update last processed block for DepositHashAppended: {}",
-                e
-            );
+            warn!("Failed to update hash tracker: {}", err);
         }
     }
 
-    Ok(logs)
+    Ok((deposits, hashes))
+}
+
+/// Generic helper: pull & decode logs of any `SolEvent` type.
+async fn fetch_events_logs_at_address<T, P>(
+    provider: &P,
+    from_block: u64,
+    contract: Address,
+    event_sig: &str,
+) -> Result<Vec<Log<T>>, Box<dyn std::error::Error>>
+where
+    T: SolEvent,
+    P: Provider,
+{
+    let filter = Filter::new()
+        .address(contract)
+        .event(event_sig)
+        .from_block(from_block);
+
+    let raw = provider.get_logs(&filter).await?;
+    let decoded = raw
+        .into_iter()
+        .map(|l| l.log_decode::<T>().map_err(|e| Box::new(e) as _))
+        .collect::<Result<Vec<Log<T>>, Box<dyn std::error::Error>>>()?;
+    Ok(decoded)
 }
