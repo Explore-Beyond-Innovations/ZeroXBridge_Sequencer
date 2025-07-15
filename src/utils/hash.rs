@@ -1,13 +1,13 @@
-use starknet_crypto::{poseidon_hash, Felt, PoseidonHasher};
 use sha3::{Digest, Keccak256};
+use starknet_crypto::{poseidon_hash, Felt, PoseidonHasher};
 
 /// Data structure representing the burn data to be hashed
 #[derive(Debug, Clone)]
 pub struct BurnData {
-    pub caller: String,         // stark_pubkey (user's starknet address)
-    pub amount: u64,            // usd_val (amount in USD being withdrawn)
-    pub nonce: u64,             // tx nonce
-    pub time_stamp: u64,        // block.timestamp
+    pub caller: String,  // stark_pubkey (user's starknet address)
+    pub amount: u64,     // usd_val (amount in USD being withdrawn)
+    pub nonce: u64,      // tx nonce
+    pub time_stamp: u64, // block.timestamp
 }
 
 impl BurnData {
@@ -26,8 +26,8 @@ impl BurnData {
     /// The Solidity equivalent is:
     /// bytes32 commitmentHash = keccak256(abi.encodePacked(user, usdVal, nonce, block.timestamp));
     pub fn compute_commitment_hash(&self) -> [u8; 32] {
-        let caller_hex = Self::hex_to_bytes32(&self.caller)
-            .expect("Invalid hex string for caller address");
+        let caller_hex =
+            Self::hex_to_bytes32(&self.caller).expect("Invalid hex string for caller address");
         let packed = Self::encode_packed(&caller_hex, self.amount, self.nonce, self.time_stamp);
         Self::keccak256(&packed)
     }
@@ -308,7 +308,8 @@ mod tests {
     #[test]
     fn test_commitment_hash_from_burn_data() {
         let data = BurnData {
-            caller: "0x0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+            caller: "0x0101010101010101010101010101010101010101010101010101010101010101"
+                .to_string(),
             amount: 1000u64,
             nonce: 42u64,
             time_stamp: 1640995200u64,
@@ -322,7 +323,8 @@ mod tests {
     fn test_commitment_hash_solidity_compatibility() {
         // Matches the Solidity testKeccak() contract
         let data = BurnData {
-            caller: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
+            caller: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+                .to_string(),
             amount: 50000u64,
             nonce: 123u64,
             time_stamp: 1672531200u64,

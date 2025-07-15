@@ -7,7 +7,7 @@ use crate::db::database::{
     fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
     Withdrawal,
 };
-use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use starknet::core::types::Felt;
 
 // UPDATED: Added l1_token field
