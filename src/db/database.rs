@@ -85,6 +85,30 @@ pub async fn insert_deposit(
     Ok(row_id)
 }
 
+pub async fn upsert_deposit(
+    conn:&PgPool,
+    stark_pub_key: &str,
+    amount: i64,
+    commitment_hash: &str,
+    status: &str
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO deposits (stark_pub_key, amount, commitment_hash, status)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (commitment_hash) DO UPDATE
+        SET status = EXCLUDED.status,
+        updated_at = NOW()
+        "#,
+        stark_pub_key,
+        amount,
+        commitment_hash,
+        status,
+    ).execute(conn).await?;
+
+    Ok(())
+}
+
 // new function
 pub async fn insert_deposit_hash_event(
     conn: &PgPool,
