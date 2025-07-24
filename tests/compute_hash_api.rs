@@ -1,5 +1,8 @@
-use axum::{body::Body, http::{Request, StatusCode}};
 use axum::body::Bytes;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use serde_json::json;
 use tower::ServiceExt; // for `oneshot`
 
