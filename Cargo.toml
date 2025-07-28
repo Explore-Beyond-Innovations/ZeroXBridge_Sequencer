@@ -65,6 +65,9 @@ sha3 = "0.10.8"
 futures-util = "0.3.31"
 toml = "0.8.23"
 
+# Local crates
+proof-pipeline = { path = "crates/proof-pipeline" }
+
 [package.metadata.sqlx]
 offline = true
 
