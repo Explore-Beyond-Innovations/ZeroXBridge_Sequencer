@@ -96,6 +96,18 @@ impl EthereumConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StarknetConfig {
     pub chain_id: String,
+    /// Contract address for proof verification
+    pub contract_address: String,
+    /// Account address for submitting transactions
+    pub account_address: String,
+    /// Private key for the account (should be set via environment variable in production)
+    pub private_key: String,
+    /// Maximum number of retry attempts for failed transactions
+    pub max_retries: Option<u32>,
+    /// Delay between retry attempts in milliseconds
+    pub retry_delay_ms: Option<u64>,
+    /// Timeout for transaction confirmation in milliseconds
+    pub transaction_timeout_ms: Option<u64>,
 }
 
 impl StarknetConfig {

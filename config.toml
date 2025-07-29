@@ -22,6 +22,13 @@ confirmations = 3
 
 [starknet]
 chain_id = "0x534e5f4d41494e"  # SN_MAIN
+contract_address = "0x0000000000000000000000000000000000000000000000000000000000000000"  # Replace with actual proof verification contract
+account_address = "0x0000000000000000000000000000000000000000000000000000000000000000"   # Replace with actual account address
+private_key = "0x0000000000000000000000000000000000000000000000000000000000000000"      # Replace with actual private key
+# Proof submission retry configuration
+max_retries = 5
+retry_delay_ms = 5000           # Delay between retries in milliseconds
+transaction_timeout_ms = 300000 # 5 minutes timeout for transactions
 
 [relayer]
 max_retries = 5

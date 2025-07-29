@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgConnection, PgPool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Withdrawal {
@@ -258,4 +258,11 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new()
+        .max_connections(10)
+        .connect(database_url)
+        .await
 }

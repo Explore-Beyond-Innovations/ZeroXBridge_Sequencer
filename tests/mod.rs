@@ -1,9 +1,14 @@
+pub mod compute_hash;
+pub mod compute_hash_api;
 pub mod deposit_api;
-
-pub mod withdrawal_api;
-
 pub mod herodotus_api;
-
-pub mod utils;
-
+pub mod integration_proof_submission;
+pub mod l1_events_logs;
 pub mod l2_event_watcher;
+pub mod poseidon_test;
+pub mod proof_submission_integration_test;
+pub mod proof_submission_test;
+pub mod scarb_build;
+pub mod starknet_relayer_test;
+pub mod utils;
+pub mod withdrawal_api;

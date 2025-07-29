@@ -47,7 +47,16 @@ pub fn create_test_config() -> AppConfig {
             confirmations: 1,
         },
         starknet: StarknetConfig {
-            chain_id: "SN_SEPOLIA".to_string(),
+            chain_id: "0x534e5f4d41494e".to_string(),
+            contract_address: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            account_address: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            private_key: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            max_retries: Some(5),
+            retry_delay_ms: Some(5000),
+            transaction_timeout_ms: Some(300000),
         },
         relayer: RelayerConfig {
             max_retries: 3,
