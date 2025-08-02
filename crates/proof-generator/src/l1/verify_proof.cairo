@@ -71,7 +71,7 @@ fn verify_proof(leaf: felt252, proof: MmrProof, root: felt252) -> bool {
 
 /// Alternative verify_proof function that takes individual parameters
 /// This provides a more convenient interface for external callers
-fn verify_mmr_proof(
+pub fn verify_mmr_proof(
     leaf: felt252,
     leaf_index: u32,
     sibling_hashes: Array<felt252>,

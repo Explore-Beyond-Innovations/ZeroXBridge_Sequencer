@@ -1,1 +1,1 @@
-mod verify_proof;
+pub mod verify_proof;
