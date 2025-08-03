@@ -1224,7 +1224,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "proof-generatorr"
+name = "proof-pipeline"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1233,7 +1233,6 @@ dependencies = [
  "futures",
  "log",
  "pretty_assertions",
- "proof-generatorr",
  "serde",
  "serde_json",
  "sqlx",
