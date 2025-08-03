@@ -555,7 +555,16 @@ mod tests {
                 confirmations: 1,
             },
             starknet: StarknetConfig {
-                chain_id: "SN_GOERLI".to_string(),
+                chain_id: "0x534e5f474f45524c49".to_string(), // SN_GOERLI in hex
+                contract_address:
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                account_address:
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                private_key: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+                max_retries: Some(3),
+                retry_delay_ms: Some(1000),
+                transaction_timeout_ms: Some(30000),
             },
             relayer: RelayerConfig {
                 max_retries: 3,
