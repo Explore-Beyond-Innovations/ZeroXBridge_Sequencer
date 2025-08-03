@@ -1,183 +1,146 @@
+mod l1;
 mod l2;
 
-/// Verifies a Merkle proof for a given leaf hash against an expected root hash
+use core::array::{Array, ArrayTrait, SpanTrait};
+use core::panic_with_felt252;
+use core::traits::{Into, TryInto};
+
+use l1::verify_proof::verify_mmr_proof as verify_l1;
+use l2::verify_proof::verify_proof as verify_l2;
+use l1::verify_proof::Hash256;
+
+/// Entry point for verifying MMR proofs on L1 or L2.
 ///
-/// # Arguments
+/// # Input Format (Array<felt252>)
 ///
-/// * `commitment_hash` (felt252) - The hash of the leaf node to verify.
-/// * `proof` (Array<felt252>) - An array of sibling hashes.
-/// * `new_root` (felt252) - The expected Merkle root hash.
+/// ## Common
+/// - `input[0]`: mode (1 = L1, 2 = L2)
+///
+/// ## L1 Format (`mode == 1`)
+/// - `input[1..=2]`: root as `Hash256` (high, low)
+/// - `input[3..=4]`: leaf as `Hash256`
+/// - `input[5]`: leaf index (`u32`)
+/// - `input[6]`: MMR size (`u32`)
+/// - `input[7]`: number of sibling hashes (`N`)
+/// - `input[8..(8 + 2 * N - 1)]`: sibling hashes (`Array<Hash256>`)
+/// - `input[8 + 2 * N]`: number of peak hashes (`M`)
+/// - `input[...end]`: peak hashes (`Array<Hash256>`) – length `2 * M`
+///
+/// ## L2 Format (`mode == 2`)
+/// - `input[1]`: root as `felt252`
+/// - `input[2]`: leaf as `felt252`
+/// - `input[3]`: leaf index (`u32`)
+/// - `input[4]`: MMR size (`u32`)
+/// - `input[5]`: number of sibling hashes (`N`)
+/// - `input[6..(6 + N - 1)]`: sibling hashes (`Array<felt252>`)
+/// - `input[6 + N]`: number of peaks (`M`)
+/// - `input[...end]`: peak hashes (`Array<felt252>`) – length `M`
 ///
 /// # Returns
-///
-/// * `felt252` - The `new_root` if the verification is successful.
+/// - `0` if proof is valid
+/// - `1` if proof is invalid
 ///
 /// # Panics
-///
-/// * Panics with the message 'Computed root does not match' if the verification fails.
-fn verify_commitment_in_root(
-    commitment_hash: felt252, proof: Array<felt252>, new_root: felt252,
-) -> felt252 {
-    assert(!proof.is_empty(), 'Proof must not be empty');
-    let proof_span: Span<felt252> = proof.span();
+/// - If the input is malformed or the mode is unsupported
+fn main(input: Array<felt252>) -> felt252 {
+    assert(input.len() >= 2, 'Input not complete');
 
-    let mut computed_root: felt252 = commitment_hash;
-    for proof_element in proof_span {
-        computed_root =
-            if Into::<felt252, u256>::into(computed_root) < (*proof_element).into() {
-                core::pedersen::pedersen(computed_root, *proof_element)
-            } else {
-                core::pedersen::pedersen(*proof_element, computed_root)
-            };
-    };
+    let mode = *input.at(0);
+    let mode_index: usize = mode.try_into().unwrap() - 1;
 
-    assert(computed_root == new_root, 'Computed root does not match');
+    match mode_index {
+        // === L1 MODE ===
+        0 => {
+            assert(input.len() >= 8, 'L1 input too short');
 
-    computed_root
-}
+            let root = Hash256 { high: *input.at(1), low: *input.at(2) };
+            let leaf = Hash256 { high: *input.at(3), low: *input.at(4) };
 
+            let leaf_index: u32 = (*input.at(5)).try_into().unwrap();
+            let mmr_size: u32 = (*input.at(6)).try_into().unwrap();
+            let num_siblings: usize = (*input.at(7)).try_into().unwrap();
 
-/// Verifies a Merkle proof by computing the root from a leaf and its siblings.
-///
-/// This function takes a flattened array containing the expected Merkle root,
-/// the leaf hash, and the sibling hashes that constitute the proof path.
-///
-/// # Arguments
-///
-/// * `input` (`Array<felt252>`) - An array containing the Merkle proof components,
-///   structured precisely as follows:
-///   - `input[0]`: expected Merkle root (`root`).
-///   - `input[1]`: hash of the leaf (`leaf`).
-///   - `input[2..N]`: sibling hashes (`siblings`).
-///
-/// # Returns
-///
-/// * `Array<felt252>` - An array containing a single `felt252` element representing
-///   the computed Merkle root.
-fn main(input: Array<felt252>) -> Array<felt252> {
-    assert(input.len() >= 3, 'invalid input');
-    let mut proof = ArrayTrait::new();
-    for i in 2..input.len() {
-        proof.append(*input.at(i));
-    };
-    let verified_root = verify_commitment_in_root(*input.at(1), proof, *input.at(0));
+            let siblings_start = 8;
+            let siblings_end = siblings_start + 2 * num_siblings;
 
-    let mut result_array = ArrayTrait::new();
-    result_array.append(verified_root);
-    result_array
-}
+            assert(input.len() > siblings_end, 'L1 input missing sibling hashes');
 
+            let num_peaks: usize = (*input.at(siblings_end)).try_into().unwrap();
+            let peaks_start = siblings_end + 1;
+            let peaks_end = peaks_start + 2 * num_peaks;
 
-#[cfg(test)]
-mod tests {
-    use super::verify_commitment_in_root;
-    use super::l2::verify_proof::{verify_proof, verify_proof_legacy, MmrProof};
+            assert(input.len() == peaks_end, 'L1 length mismatch for peaks');
 
-    // Helper function to build a simple 4-leaf tree for tests
-    fn build_test_tree() -> (felt252, felt252, felt252, felt252, felt252, felt252, felt252) {
-        let leaf_0: felt252 = 10;
-        let leaf_1: felt252 = 20;
-        let leaf_2: felt252 = 30;
-        let leaf_3: felt252 = 40;
+            let span = input.span();
+            let siblings_span = span.slice(siblings_start, siblings_end);
+            let peaks_span = span.slice(peaks_start, peaks_end);
 
-        let h_01 = core::pedersen::pedersen(leaf_0, leaf_1);
-        let h_23 = core::pedersen::pedersen(leaf_2, leaf_3);
-        let root = core::pedersen::pedersen(h_01, h_23);
+            let mut siblings_array = ArrayTrait::<Hash256>::new();
+            let mut i = 0;
+            while i < siblings_span.len() {
+                siblings_array.append(Hash256 {
+                    high: *siblings_span.at(i),
+                    low: *siblings_span.at(i + 1),
+                });
+                i += 2;
+            }
 
-        (leaf_0, leaf_1, leaf_2, leaf_3, h_01, h_23, root)
-    }
+            let mut peaks_array = ArrayTrait::<Hash256>::new();
+            let mut j = 0;
+            while j < peaks_span.len() {
+                peaks_array.append(Hash256 {
+                    high: *peaks_span.at(j),
+                    low: *peaks_span.at(j + 1),
+                });
+                j += 2;
+            }
 
-    #[test]
-    #[available_gas(5000000)]
-    fn test_correct_proof_passes() {
-        let (leaf_0, leaf_1, leaf_2, leaf_3, h_01, h_23, root) = build_test_tree();
+            let is_valid = verify_l1(leaf, leaf_index, siblings_array, peaks_array, mmr_size, root);
+            if is_valid { 0 } else { 1 }
+        },
 
-        let mut proof_0: Array = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1); // Sibling at level 0
-        proof_0.append(h_23); // Sibling at level 1
-        let verified_root_0 = verify_commitment_in_root(leaf_0, proof_0, root);
-        assert(verified_root_0 == root, 'Leaf 0 verification failed');
+        // === L2 MODE ===
+        1 => {
+            assert(input.len() >= 7, 'L2 input too short');
 
-        let mut proof_3: Array = ArrayTrait::<felt252>::new();
-        proof_3.append(leaf_2); // Sibling at level 0
-        proof_3.append(h_01); // Sibling at level 1
-        let verified_root_3 = verify_commitment_in_root(leaf_3, proof_3, root);
-        assert(verified_root_3 == root, 'Leaf 3 verification failed');
-    }
+            let root = *input.at(1);
+            let leaf = *input.at(2);
+            let leaf_index: u32 = (*input.at(3)).try_into().unwrap();
+            let mmr_size: u32 = (*input.at(4)).try_into().unwrap();
+            let num_siblings: usize = (*input.at(5)).try_into().unwrap();
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_leaf_fails() {
-        let (_, leaf_1, _, _, _, h_23, root) = build_test_tree();
-        let mut proof_0 = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1);
-        proof_0.append(h_23);
+            let siblings_start = 6;
+            let siblings_end = siblings_start + num_siblings;
 
-        let wrong_leaf = 999;
-        verify_commitment_in_root(wrong_leaf, proof_0, root);
-    }
+            assert(input.len() > siblings_end, 'L2 input missing siblings');
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_sibling_fails() {
-        let (leaf_0, _, _, _, _, h_23, root) = build_test_tree();
-        let mut proof_0_wrong = ArrayTrait::<felt252>::new();
-        proof_0_wrong.append(998); // Wrong sibling for leaf 0
-        proof_0_wrong.append(h_23);
+            let num_peaks: usize = (*input.at(siblings_end)).try_into().unwrap();
+            let peaks_start = siblings_end + 1;
+            let peaks_end = peaks_start + num_peaks;
 
-        verify_commitment_in_root(leaf_0, proof_0_wrong, root);
-    }
+            assert(input.len() == peaks_end, 'L2 length mismatch for peaks');
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic(expected: ('Computed root does not match',))]
-    fn test_wrong_root_fails() {
-        let (leaf_0, leaf_1, _, _, _, h_23, _) = build_test_tree();
-        let mut proof_0 = ArrayTrait::<felt252>::new();
-        proof_0.append(leaf_1);
-        proof_0.append(h_23);
+            let span = input.span();
+            let siblings_span = span.slice(siblings_start, siblings_end);
+            let peaks_span = span.slice(peaks_start, peaks_end);
 
-        let wrong_root = 777;
-        verify_commitment_in_root(leaf_0, proof_0, wrong_root);
-    }
+            let mut peaks_array = ArrayTrait::<felt252>::new();
+            for p in peaks_span {
+                peaks_array.append(*p);
+            }
 
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic]
-    fn test_empty_proof_fails() {
-        // Only run this test if tree height > 0
-        let (leaf_0, _, _, _, _, _, root) = build_test_tree();
-        let mut empty_proof = ArrayTrait::<felt252>::new();
+            let is_valid = verify_l2(
+                leaf,
+                leaf_index,
+                siblings_span,
+                root,
+                mmr_size.into(),
+                peaks_array,
+            );
 
-        verify_commitment_in_root(leaf_0, empty_proof, root);
-    }
+            if is_valid { 0 } else { 1 }
+        },
 
-    #[test]
-    #[available_gas(3000000)]
-    fn test_l2_verify_proof_integration() {
-        // Test single element MMR case
-        let leaf = 42;
-        let leaf_index = 0;
-        let proof: MmrProof = array![].span();
-        let root = leaf; // For single element MMR, root equals leaf
-        let merkle_size = 1;
-        let peaks = array![leaf];
-
-        let is_valid = verify_proof(leaf, leaf_index, proof, root, merkle_size, peaks);
-        assert(is_valid, 'L2 verify_proof failed');
-    }
-
-
-    #[test]
-    #[available_gas(2000000)]
-    #[should_panic]
-    fn test_malformed_proof_fails() {
-        let (leaf_0, leaf_1, _, _, _, _, root) = build_test_tree();
-        let mut short_proof = ArrayTrait::<felt252>::new();
-        short_proof.append(leaf_1); // Only one element provided
-
-        verify_commitment_in_root(leaf_0, short_proof, root);
+        _ => panic_with_felt252('Invalid Mode'),
     }
 }

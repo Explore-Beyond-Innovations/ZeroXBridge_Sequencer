@@ -46,11 +46,11 @@ pub fn verify_proof(
         let mut i = 0;
         loop {
             if i == peaks_span.len() {
-                break ();
+                break;
             }
             if *peaks_span.at(i) == leaf {
                 leaf_found_in_peaks = true;
-                break ();
+                break;
             }
             i += 1;
         };

@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgConnection, PgPool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Withdrawal {
@@ -83,6 +83,30 @@ pub async fn insert_deposit(
     .await?;
 
     Ok(row_id)
+}
+
+pub async fn upsert_deposit(
+    conn:&PgPool,
+    stark_pub_key: &str,
+    amount: i64,
+    commitment_hash: &str,
+    status: &str
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO deposits (stark_pub_key, amount, commitment_hash, status)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (commitment_hash) DO UPDATE
+        SET status = EXCLUDED.status,
+        updated_at = NOW()
+        "#,
+        stark_pub_key,
+        amount,
+        commitment_hash,
+        status,
+    ).execute(conn).await?;
+
+    Ok(())
 }
 
 // new function
@@ -258,4 +282,11 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new()
+        .max_connections(10)
+        .connect(database_url)
+        .await
 }
