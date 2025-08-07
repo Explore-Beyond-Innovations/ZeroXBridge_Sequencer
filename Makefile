@@ -1,7 +1,7 @@
 common-start:
 	$(MAKE) docker-build
 	$(MAKE) docker-run
-	$(MAKE) sqlx-migrate-run
+	$(MAKE) migrate-run
 	@echo "Container is running and migrations applied."
 
 docker-build:

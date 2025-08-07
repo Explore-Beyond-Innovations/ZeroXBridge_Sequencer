@@ -20,6 +20,8 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+const MINT_AND_CLAIM_SELECTOR: starknet_crypto::Felt = starknet::macros::selector!("mint_and_claim_xzb");
+
 // Define custom error types for the Starknet Relayer
 #[derive(Error, Debug)]
 pub enum StarknetRelayerError {
@@ -88,7 +90,7 @@ impl StarknetRelayer {
         let signer: LocalWallet = LocalWallet::from(SigningKey::from_secret_scalar(
             Felt::from_hex(&config.private_key).unwrap(),
         ));
-        let chain_id = MAINNET;
+        let chain_id = provider.chain_id().await.unwrap_or(MAINNET);
         let address = Felt::from_hex(&config.account_address).unwrap();
         let account =
             SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
@@ -246,7 +248,7 @@ impl StarknetRelayer {
         let withdrawal_id = tx.id.clone();
 
         // Extract proof array and merkle root from proof data
-        let proof_array = match proof.get("proof") {
+        let proof_array = match proof.get("proof_array") {
             Some(array) if array.is_array() => {
                 let mut felts = Vec::new();
                 for item in array.as_array().unwrap() {
@@ -280,17 +282,18 @@ impl StarknetRelayer {
             _ => return Err(StarknetRelayerError::ProofDataMissing),
         };
 
-        // Initialize calldata with basic fields
+        
         let mut calldata: Vec<Felt> = Vec::new();
 
-        // Add withdrawal ID as a felt
-        calldata.push(Felt::from_str(&withdrawal_id.to_string()).unwrap());
-
-        // Add proof array length
-        calldata.push(Felt::from_str(&proof_array.len().to_string()).unwrap());
+        // Add proof array length        
+        calldata.push(proof_array.len().into());
 
         // Extend calldata with proof array elements
         calldata.extend(proof_array);
+
+        // Add withdrawal ID as a felt
+        calldata.push(withdrawal_id.into());
+
 
         // Add merkle root at the end
         calldata.push(merkle_root);
@@ -301,11 +304,10 @@ impl StarknetRelayer {
 
         // Create the call
         use starknet::core::types::Call;
-        use starknet::macros::selector;
 
         let calls = vec![Call {
             to: contract_address,
-            selector: selector!("process_withdrawal"),
+            selector: MINT_AND_CLAIM_SELECTOR,
             calldata,
         }];
 
