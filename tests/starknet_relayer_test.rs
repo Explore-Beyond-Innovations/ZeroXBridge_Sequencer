@@ -1,3 +1,4 @@
+mod common;
 #[cfg(test)]
 mod tests {
     use mockall::mock;
@@ -8,6 +9,8 @@ mod tests {
     use zeroxbridge_sequencer::queue::l2_queue::L2Transaction;
     use zeroxbridge_sequencer::relayer::starknet_relayer::StarknetRelayer;
     use zeroxbridge_sequencer::relayer::starknet_relayer::StarknetRelayerConfig;
+
+    use crate::common;
 
     // Mock the Starknet provider
     mock! {
@@ -54,14 +57,14 @@ mod tests {
 
     fn create_sample_config() -> StarknetRelayerConfig {
         StarknetRelayerConfig {
-            bridge_contract_address: "0x1234567890abcdef".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            private_key: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            bridge_contract_address: "0x656a6fa9c12526dd9ba8e4d7d33d0dc8c2da4b7196f7e796f1058f200f1a2e5".to_string(),
+            rpc_url: "http://localhost:5050".to_string(),
+            private_key: "0x0000000000000000000000000000000071d7bb07b9a64f6f78ac4c816aff4da9"
                 .to_string(),
             max_retries: 3,
             retry_delay_ms: 1000,
             transaction_timeout_ms: 30000,
-            account_address: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            account_address: "0x064b48806902a367c8598f4f95c305e8c1a1acba5f082d294a43793113115691"
                 .to_string(),
         }
     }
@@ -125,6 +128,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_transaction_success() {
+        common::init_tracing();
         let config = create_sample_config();
         let pool = create_test_db_pool().await;
 
