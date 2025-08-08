@@ -225,6 +225,43 @@ pub async fn process_withdrawal_retry(conn: &mut PgConnection, id: i32) -> Resul
     Ok(())
 }
 
+// this obtains the most recent with the limit clause
+// in the scond accessor, it'll return all rows
+pub async fn fetch_latest_withdrawal_by_user(
+    pool: &PgPool,
+    identifier: &str,
+) -> Result<Withdrawal, sqlx::Error> {
+    sqlx::query_as!(
+        Withdrawal,
+        r#"
+        SELECT * FROM withdrawals
+        WHERE user_address = $1 OR stark_pub_key = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        identifier
+    )
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn fetch_all_withdrawals_by_user(
+    pool: &PgPool,
+    identifier: &str,
+) -> Result<Vec<Withdrawal>, sqlx::Error> {
+    sqlx::query_as!(
+        Withdrawal,
+        r#"
+        SELECT * FROM withdrawals
+        WHERE user_address = $1 OR stark_pub_key = $1
+        ORDER BY created_at DESC
+        "#,
+        identifier
+    )
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn update_withdrawal_status(
     conn: &mut PgConnection,
     id: i32,
