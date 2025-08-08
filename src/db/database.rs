@@ -11,6 +11,7 @@ pub struct Withdrawal {
     pub l2_tx_id: Option<i32>,
     pub commitment_hash: String,
     pub status: String,
+    pub user_address: String,
     pub retry_count: i32,
     pub created_at: Option<NaiveDateTime>,
     pub updated_at: Option<NaiveDateTime>,
