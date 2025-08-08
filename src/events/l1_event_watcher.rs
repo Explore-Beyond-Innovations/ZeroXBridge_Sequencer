@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use tracing::log::{debug, warn};
 
 use std::str::FromStr;
+use async_trait::async_trait;
 
 use alloy::{
     primitives::{Address},
@@ -16,6 +17,36 @@ use alloy::{
 // Name of the table for storing block tracker
 pub const BLOCK_TRACKER_KEY: &str = "l1_deposit_events_last_block";
 pub const DEPOSIT_HASH_BLOCK_TRACKER_KEY: &str = "l1_deposit_hash_events_last_block";
+
+// Trait for testable Ethereum provider
+#[async_trait]
+pub trait TestEthereumProvider: Send + Sync {
+    fn get_logs(&self, filter: &Filter) -> impl std::future::Future<Output = Result<Vec<alloy::rpc::types::Log>, Box<dyn std::error::Error + Send + Sync>>> + Send;
+}
+
+// Implementation for real Ethereum provider
+pub struct RealEthereumProvider {
+    rpc_url: String,
+}
+
+impl RealEthereumProvider {
+    pub fn new(rpc_url: String) -> Self {
+        Self { rpc_url }
+    }
+}
+
+#[async_trait]
+impl TestEthereumProvider for RealEthereumProvider {
+    fn get_logs(&self, filter: &Filter) -> impl std::future::Future<Output = Result<Vec<alloy::rpc::types::Log>, Box<dyn std::error::Error + Send + Sync>>> + Send {
+        let rpc_url = self.rpc_url.clone();
+        let filter = filter.clone();
+        async move {
+            let provider = ProviderBuilder::new().connect(&rpc_url).await?;
+            let logs = provider.get_logs(&filter).await?;
+            Ok(logs)
+        }
+    }
+}
 
 sol! {
     #[derive(Debug, PartialEq)]
@@ -46,6 +77,16 @@ pub async fn fetch_l1_deposit_events(
     from_block: u64,
     contract_addr: &str,
 ) -> Result<Vec<Log<ZeroXBridge::DepositEvent>>, Box<dyn std::error::Error>> {
+    let provider = RealEthereumProvider::new(rpc_url.to_string());
+    fetch_l1_deposit_events_with_provider(db_pool, from_block, contract_addr, &provider).await
+}
+
+pub async fn fetch_l1_deposit_events_with_provider<P: TestEthereumProvider>(
+    db_pool: &mut PgPool,
+    from_block: u64,
+    contract_addr: &str,
+    provider: &P,
+) -> Result<Vec<Log<ZeroXBridge::DepositEvent>>, Box<dyn std::error::Error>> {
     // Load last processed block for DepositEvent
     let from_block_deposit = match get_last_processed_block(db_pool, BLOCK_TRACKER_KEY).await {
         Ok(Some(last_block)) => last_block + 1,
@@ -59,7 +100,7 @@ pub async fn fetch_l1_deposit_events(
     // Fetch DepositEvent logs
     let event_name = ZeroXBridge::DepositEvent::SIGNATURE;
     let deposit_logs =
-        fetch_events_logs_at_address(rpc_url, from_block_deposit, contract_addr, event_name)
+        fetch_events_logs_with_provider(from_block_deposit, contract_addr, event_name, provider)
             .await?;
 
     // Update last processed block for DepositEvent
@@ -113,18 +154,17 @@ use tokio::time::sleep;
 const MAX_RETRIES: usize = 5; // we can update this. i'm not sure if 10 (retries) would be too much
 const INITIAL_BACKOFF_MS: u64 = 500;
 
-async fn fetch_events_logs_at_address<T>(
-    rpc_url: &str,
+async fn fetch_events_logs_with_provider<T, P>(
     from_block: u64,
     contract_addr: &str,
     event_name: &str,
+    provider: &P,
 ) -> Result<Vec<Log<T>>, Box<dyn std::error::Error>>
 where
     T: alloy::sol_types::SolEvent,
+    P: TestEthereumProvider,
 {
     let contract_addr = Address::from_str(contract_addr)?;
-
-    let provider = ProviderBuilder::new().connect(rpc_url).await?;
 
     let filter = Filter::new()
         .address(contract_addr)
@@ -149,7 +189,7 @@ where
                 retries += 1;
                 if retries > MAX_RETRIES {
                     warn!("Max retries reached while fetching logs: {}", e);
-                    return Err(Box::new(e));
+                    return Err(e);
                 }
 
                 warn!(
