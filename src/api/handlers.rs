@@ -1,13 +1,13 @@
-use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{extract::Query, http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
-    Withdrawal,
+    fetch_all_withdrawals_by_user, fetch_latest_withdrawal_by_user, fetch_pending_deposits,
+    fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit, Withdrawal,
 };
-use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use starknet::core::types::Felt;
 
 // UPDATED: Added l1_token field
@@ -84,6 +84,17 @@ pub struct ErrorResponse {
     pub details: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct WithdrawalQuery {
+    pub user_address: Option<String>,
+    pub stark_pub_key: Option<String>,
+}
+
+pub enum WithdrawalFetchMode {
+    Latest,
+    All,
+}
+
 pub async fn handle_deposit_post(
     Extension(pool): Extension<PgPool>,
     Json(payload): Json<DepositRequest>,
@@ -150,6 +161,65 @@ pub async fn get_pending_withdrawals(
         Ok(withdrawals) => Ok(Json(withdrawals)),
         Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
     }
+}
+
+pub async fn fetch_withdrawals_by_identifier(
+    pool: &PgPool,
+    user_address: Option<String>,
+    stark_pub_key: Option<String>,
+    mode: WithdrawalFetchMode,
+) -> Result<Vec<Withdrawal>, (StatusCode, String)> {
+    // one (not two of them at the same time) query parameter must be provided to the endpoint that calls this handler
+    if (user_address.is_none() && stark_pub_key.is_none())
+        || (user_address.is_some() && stark_pub_key.is_some())
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Exactly one of user_address or stark_pub_key must be provided".into(),
+        ));
+    }
+
+    let identifier = user_address.or(stark_pub_key).unwrap();
+
+    match mode {
+        WithdrawalFetchMode::Latest => {
+            let w = fetch_latest_withdrawal_by_user(pool, &identifier)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            Ok(vec![w])
+        }
+        WithdrawalFetchMode::All => fetch_all_withdrawals_by_user(pool, &identifier)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn get_latest_withdrawal(
+    Extension(pool): Extension<PgPool>,
+    Query(query): Query<WithdrawalQuery>,
+) -> Result<Json<Vec<Withdrawal>>, (StatusCode, String)> {
+    let withdrawals = fetch_withdrawals_by_identifier(
+        &pool,
+        query.user_address,
+        query.stark_pub_key,
+        WithdrawalFetchMode::Latest,
+    )
+    .await?;
+    Ok(Json(withdrawals))
+}
+
+pub async fn get_all_withdrawals(
+    Extension(pool): Extension<PgPool>,
+    Query(query): Query<WithdrawalQuery>,
+) -> Result<Json<Vec<Withdrawal>>, (StatusCode, String)> {
+    let withdrawals = fetch_withdrawals_by_identifier(
+        &pool,
+        query.user_address,
+        query.stark_pub_key,
+        WithdrawalFetchMode::All,
+    )
+    .await?;
+    Ok(Json(withdrawals))
 }
 
 pub async fn hello_world(

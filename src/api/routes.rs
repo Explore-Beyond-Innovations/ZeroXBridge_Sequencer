@@ -6,8 +6,9 @@ use axum::{
 use sqlx::PgPool;
 
 use crate::api::handlers::{
-    compute_poseidon_hash, create_withdrawal, get_pending_withdrawals, handle_deposit_post,
-    handle_get_pending_deposits, compute_hash_handler,
+    compute_hash_handler, compute_poseidon_hash, create_withdrawal, get_all_withdrawals,
+    get_latest_withdrawal, get_pending_withdrawals, handle_deposit_post,
+    handle_get_pending_deposits,
 };
 
 #[derive(Clone)]
@@ -27,10 +28,9 @@ pub fn create_router(pool: PgPool) -> Router {
             "/withdrawals",
             post(create_withdrawal).get(get_pending_withdrawals),
         )
+        .route("/withdrawals/all", get(get_all_withdrawals))
+        .route("/withdrawals/latest", get(get_latest_withdrawal))
         .route("/poseidon/hash", post(compute_poseidon_hash))
-        .route(
-            "/compute-hash",
-            post(compute_hash_handler)
-        )
+        .route("/compute-hash", post(compute_hash_handler))
         .layer(Extension(pool))
 }
