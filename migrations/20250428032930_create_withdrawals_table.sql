@@ -22,3 +22,7 @@ CREATE TABLE IF NOT EXISTS withdrawal_proofs (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE withdrawals
+    ADD COLUMN IF NOT EXISTS l1_hash TEXT,
+    ADD COLUMN IF NOT EXISTS nonce BIGINT;
