@@ -4,10 +4,11 @@ use serde_json::json;
 use sqlx::PgPool;
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
-    Withdrawal,
+    fetch_pending_deposits, fetch_pending_withdrawals, get_or_create_nonce, insert_deposit,
+    insert_deposit_with_l2_hash, insert_withdrawal, Deposit, Withdrawal,
 };
-use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
+use chrono::Utc;
 use starknet::core::types::Felt;
 
 // UPDATED: Added l1_token field
@@ -46,7 +47,7 @@ pub struct PoseidonHashRequest {
     pub nonce: u64,
     /// Block timestamp
     pub timestamp: u64,
-    /// Optional hash method to use: "batch" or "sequential" (default: "sequential")
+    /// Optional hash method to use: "batch" or "sequential" (default: "BatchHash")
     #[serde(default)]
     pub hash_method: Option<String>,
 }
@@ -91,11 +92,52 @@ pub async fn handle_deposit_post(
     if payload.amount <= 0 || payload.stark_pub_key.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Invalid input".to_string()));
     }
-    let deposit_id = insert_deposit(
+
+    // Parse recipient address as Felt (felt252)
+    let recipient_felt = match Felt::from_hex(&payload.stark_pub_key) {
+        Ok(felt) => felt,
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Invalid Starknet address format. Must be a valid hex format (0x...).".to_string(),
+            ))
+        }
+    };
+
+    // Get or create nonce for the user
+    let nonce = get_or_create_nonce(&pool, &payload.stark_pub_key)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Get current timestamp
+    let timestamp = Utc::now().timestamp() as u64;
+
+    // Compute L2 hash using internal Poseidon hash logic with BatchHash method
+    let poseidon_request = PoseidonHashRequest {
+        recipient: payload.stark_pub_key.clone(),
+        amount: payload.amount as u128,
+        nonce: nonce as u64,
+        timestamp,
+        hash_method: Some("BatchHash".to_string()),
+    };
+
+    let l2_hash = compute_poseidon_commitment_hash(
+        recipient_felt,
+        poseidon_request.amount,
+        poseidon_request.nonce,
+        poseidon_request.timestamp,
+        HashMethod::BatchHash,
+    );
+
+    let l2_hash_hex = format!("0x{:x}", l2_hash);
+
+    let deposit_id = insert_deposit_with_l2_hash(
         &pool,
         &payload.stark_pub_key,
         payload.amount,
         &payload.commitment_hash,
+        &l2_hash_hex,
+        nonce,
     )
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -185,19 +227,17 @@ pub async fn compute_poseidon_hash(
         ),
     };
 
-    // Determine which hash method to use (default to sequential pairwise which is more common in Cairo contracts)
+    // Determine which hash method to use (default to BatchHash for efficiency)
     let method = match payload.hash_method.as_deref() {
-        Some("batch") => HashMethod::BatchHash,
-        Some("sequential") | None => HashMethod::SequentialPairwise,
-        Some(method) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                format!(
-                    "Invalid hash method: '{}'. Valid options are 'batch' or 'sequential'",
-                    method
-                ),
-            ))
-        }
+        Some("BatchHash") | Some("batch") | None => HashMethod::BatchHash,
+        Some("SequentialPairwise") | Some("sequential") => HashMethod::SequentialPairwise,
+        Some(method) => return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid hash method: '{}'. Valid options are 'BatchHash' or 'SequentialPairwise'",
+                method
+            ),
+        )),
     };
 
     // Compute the Poseidon hash using the utility function

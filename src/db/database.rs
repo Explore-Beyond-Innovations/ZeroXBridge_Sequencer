@@ -22,8 +22,19 @@ pub struct Deposit {
     pub stark_pub_key: String,
     pub amount: i64,
     pub commitment_hash: String,
+    pub l2_hash: Option<String>,
+    pub nonce: Option<i64>,
     pub status: String, // "pending", "processed", etc.
     pub retry_count: i32,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct DepositNonce {
+    pub id: i32,
+    pub stark_pubkey: String,
+    pub current_nonce: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -85,12 +96,38 @@ pub async fn insert_deposit(
     Ok(row_id)
 }
 
-pub async fn upsert_deposit(
-    conn:&PgPool,
+pub async fn insert_deposit_with_l2_hash(
+    conn: &PgPool,
     stark_pub_key: &str,
     amount: i64,
     commitment_hash: &str,
-    status: &str
+    l2_hash: &str,
+    nonce: i64,
+) -> Result<i32, sqlx::Error> {
+    let row_id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO deposits (stark_pub_key, amount, commitment_hash, l2_hash, nonce, status)
+        VALUES ($1, $2, $3, $4, $5, 'pending')
+        RETURNING id
+        "#,
+        stark_pub_key,
+        amount,
+        commitment_hash,
+        l2_hash,
+        nonce
+    )
+    .fetch_one(conn)
+    .await?;
+
+    Ok(row_id)
+}
+
+pub async fn upsert_deposit(
+    conn: &PgPool,
+    stark_pub_key: &str,
+    amount: i64,
+    commitment_hash: &str,
+    status: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
@@ -104,7 +141,9 @@ pub async fn upsert_deposit(
         amount,
         commitment_hash,
         status,
-    ).execute(conn).await?;
+    )
+    .execute(conn)
+    .await?;
 
     Ok(())
 }
@@ -282,6 +321,55 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i64, sqlx::Error> {
+    let mut tx = conn.begin().await?;
+
+    let current_nonce = sqlx::query_scalar!(
+        r#"
+        SELECT current_nonce FROM deposit_nonces WHERE stark_pubkey = $1
+        "#,
+        stark_pubkey
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    match current_nonce {
+        Some(nonce) => {
+            let new_nonce = nonce + 1;
+            sqlx::query!(
+                r#"
+                UPDATE deposit_nonces 
+                SET current_nonce = $2, updated_at = NOW() 
+                WHERE stark_pubkey = $1
+                "#,
+                stark_pubkey,
+                new_nonce
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(new_nonce)
+        }
+        None => {
+            let initial_nonce = 0i64;
+            sqlx::query!(
+                r#"
+                INSERT INTO deposit_nonces (stark_pubkey, current_nonce) 
+                VALUES ($1, $2)
+                "#,
+                stark_pubkey,
+                initial_nonce
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(initial_nonce)
+        }
+    }
 }
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
