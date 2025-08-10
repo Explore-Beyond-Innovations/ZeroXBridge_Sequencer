@@ -10,6 +10,8 @@ pub struct Withdrawal {
     pub l1_token: String,
     pub l2_tx_id: Option<i32>,
     pub commitment_hash: String,
+    pub l1_hash: Option<String>,
+    pub nonce: Option<i64>,
     pub status: String,
     pub retry_count: i32,
     pub created_at: Option<NaiveDateTime>,
@@ -60,6 +62,34 @@ pub async fn insert_withdrawal(
     .fetch_one(conn)
     .await?;
 
+    Ok(row_id)
+}
+
+/// Insert a withdrawal with l1_hash and nonce
+pub async fn insert_withdrawal_v2(
+    conn: &PgPool,
+    stark_pub_key: &str,
+    amount: i64,
+    l1_token: &str,
+    commitment_hash: &str,
+    l1_hash: &str,
+    nonce: i64,
+) -> Result<i32, sqlx::Error> {
+    let row_id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO withdrawals (stark_pub_key, amount, l1_token, commitment_hash, l1_hash, nonce, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+        RETURNING id
+        "#,
+        stark_pub_key,
+        amount,
+        l1_token,
+        commitment_hash,
+        l1_hash,
+        nonce
+    )
+    .fetch_one(conn)
+    .await?;
     Ok(row_id)
 }
 
@@ -282,6 +312,27 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+/// Fetches and increments the withdrawal nonce for a user, creating a row if it does not exist
+pub async fn get_and_increment_withdrawal_nonce(
+    conn: &PgPool,
+    stark_pub_key: &str,
+) -> Result<i64, sqlx::Error> {
+    // Try to increment and return the new nonce
+    let rec = sqlx::query_scalar!(
+        r#"
+        INSERT INTO withdrawal_nonces (stark_pub_key, nonce, updated_at)
+        VALUES ($1, 1, NOW())
+        ON CONFLICT (stark_pub_key) DO UPDATE
+        SET nonce = withdrawal_nonces.nonce + 1, updated_at = NOW()
+        RETURNING nonce
+        "#,
+        stark_pub_key
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(rec)
 }
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {

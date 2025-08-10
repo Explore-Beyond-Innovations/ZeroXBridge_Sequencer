@@ -4,7 +4,7 @@ use serde_json::json;
 use sqlx::PgPool;
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
+    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, Deposit,
     Withdrawal,
 };
 use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
@@ -117,20 +117,51 @@ pub async fn create_withdrawal(
     Extension(pool): Extension<PgPool>,
     Json(payload): Json<CreateWithdrawalRequest>,
 ) -> Result<Json<WithrawalResponse>, (StatusCode, String)> {
-    // ADDED: Validation logic
+    use crate::db::database::{get_and_increment_withdrawal_nonce, insert_withdrawal_v2};
+    use crate::utils::BurnData;
+
+    // Validation logic
     if payload.amount <= 0
         || payload.stark_pub_key.trim().is_empty()
-        || payload.commitment_hash.trim().is_empty()
         || payload.l1_token.trim().is_empty()
     {
         return Err((StatusCode::BAD_REQUEST, "Invalid input".to_string()));
     }
 
-    let withdrawal_id = insert_withdrawal(
+    // Fetch and increment the nonce for the user
+    let nonce = get_and_increment_withdrawal_nonce(&pool, &payload.stark_pub_key)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get/increment nonce: {:?}", err),
+            )
+        })?;
+
+    // Use current timestamp if not provided (for compatibility, but ideally should be provided)
+    let timestamp = chrono::Utc::now().timestamp() as u64;
+
+    // Construct BurnData and compute the hash
+    let burn_data = BurnData {
+        caller: payload.stark_pub_key.clone(),
+        amount: payload.amount as u64, // assuming amount is always positive
+        nonce: nonce as u64,
+        time_stamp: timestamp,
+    };
+    if BurnData::hex_to_bytes32(&burn_data.caller).is_err() {
+        return Err((StatusCode::BAD_REQUEST, "Invalid stark_pubkey format".to_string()));
+    }
+    let l1_hash = burn_data.hash_to_hex_string();
+
+    // Insert withdrawal with l1_hash and nonce
+    let withdrawal_id = insert_withdrawal_v2(
         &pool,
         &payload.stark_pub_key,
         payload.amount,
-        &payload.commitment_hash,
+        &payload.l1_token,
+        &l1_hash,
+        &l1_hash, // commitment_hash and l1_hash are the same for now
+        nonce,
     )
     .await
     .map_err(|err| {
