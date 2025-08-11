@@ -1,89 +1,169 @@
-use std::{array::TryFromSliceError, sync::Arc};
+use std::collections::HashMap;
+use sha3::{Digest, Keccak256};
+use serde::{Serialize, Deserialize};
 
-use accumulators::{
-    hasher::keccak::KeccakHasher,
-    mmr::{Proof, MMR},
-    store::memory::InMemoryStore,
-};
+use crate::types::Result;
 
-use crate::{error::TreeBuilderError, types::Result};
+/// Merkle proof containing sibling hashes and path
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Proof {
+    pub leaf_index: usize,
+    pub sibling_hashes: Vec<[u8; 32]>,
+    pub peak_bagging: Vec<[u8; 32]>,
+}
 
-/// A builder for constructing Merkle trees and generating proofs
+/// Simple Merkle tree implementation for L1 deposits
 pub struct L1MerkleTreeBuilder {
-    mmr: MMR,
+    leaves: Vec<[u8; 32]>,
+    tree_cache: HashMap<usize, [u8; 32]>,
 }
 
 impl L1MerkleTreeBuilder {
-    fn decode_hex(hex_str: &str) -> Result<[u8; 32]> {
-        hex::decode(&hex_str[2..])
-            .map_err(|e| TreeBuilderError::HexError(e.to_string()))
-            .and_then(|bytes| {
-                bytes.as_slice().try_into().map_err(|e: TryFromSliceError| {
-                    TreeBuilderError::ConversionError(e.to_string())
-                })
-            })
-    }
-
     /// Creates a new MerkleTreeBuilder instance
     pub fn new() -> Self {
-        let store = InMemoryStore::default();
-        let store_rc = Arc::new(store);
-        let hasher = Arc::new(KeccakHasher::new());
-
         Self {
-            mmr: MMR::new(store_rc, hasher, None),
+            leaves: Vec::new(),
+            tree_cache: HashMap::new(),
         }
     }
 
-    /// Builds a Merkle tree from a list of commitment hashes
+    /// Hash two nodes together using Keccak256
+    fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update(&left);
+        hasher.update(&right);
+        hasher.finalize().into()
+    }
+
+    /// Hash a single node (for odd number of nodes)
+    fn hash_single(node: [u8; 32]) -> [u8; 32] {
+        let mut hasher = Keccak256::new();
+        hasher.update(&node);
+        hasher.finalize().into()
+    }
+
+    /// Builds/appends to the Merkle tree from a list of commitment hashes
     pub async fn build_merkle(&mut self, leaves: Vec<[u8; 32]>) -> Result<()> {
         for leaf in leaves {
-            self.mmr.append(format!("0x{}", hex::encode(leaf))).await?;
+            self.leaves.push(leaf);
         }
+        // Clear cache when new leaves are added
+        self.tree_cache.clear();
         Ok(())
     }
 
     /// Gets the current Merkle root
     pub async fn get_root(&self) -> Result<[u8; 32]> {
-        let bag = self.mmr.bag_the_peaks(None).await?;
-        let elements_count = self.mmr.elements_count.get().await?;
-        let root = self.mmr.calculate_root_hash(&bag, elements_count)?;
-        Self::decode_hex(&root)
+        if self.leaves.is_empty() {
+            return Ok([0u8; 32]);
+        }
+
+        if self.leaves.len() == 1 {
+            return Ok(self.leaves[0]);
+        }
+
+        let mut current_level = self.leaves.clone();
+        
+        while current_level.len() > 1 {
+            let mut next_level = Vec::new();
+            
+            for i in (0..current_level.len()).step_by(2) {
+                if i + 1 < current_level.len() {
+                    // Pair exists, hash them together
+                    let hash = Self::hash_pair(current_level[i], current_level[i + 1]);
+                    next_level.push(hash);
+                } else {
+                    // Odd number, hash single node
+                    let hash = Self::hash_single(current_level[i]);
+                    next_level.push(hash);
+                }
+            }
+            
+            current_level = next_level;
+        }
+
+        Ok(current_level[0])
     }
 
     /// Generates a Merkle proof for a given leaf
     pub async fn get_proof(&self, leaf: [u8; 32]) -> Result<Option<Proof>> {
-        let elements_count = self.mmr.elements_count.get().await?;
-        let leaf_str = format!("0x{}", hex::encode(leaf));
-
-        // Find the leaf index by scanning elements
-        let mut leaf_index = None;
-        for i in 1..=elements_count {
-            if let Some(hash) = self
-                .mmr
-                .hashes
-                .get(accumulators::store::SubKey::Usize(i))
-                .await?
-            {
-                if hash == leaf_str {
-                    leaf_index = Some(i);
-                    break;
-                }
-            }
-        }
-
-        if let Some(idx) = leaf_index {
-            let proof = self.mmr.get_proof(idx, None).await?;
+        // Find leaf index
+        let leaf_index = self.leaves.iter().position(|&x| x == leaf);
+        
+        if let Some(index) = leaf_index {
+            let proof = self.generate_proof(index).await?;
             Ok(Some(proof))
         } else {
             Ok(None)
         }
     }
 
+    /// Generate proof for a leaf at given index
+    async fn generate_proof(&self, leaf_index: usize) -> Result<Proof> {
+        let mut sibling_hashes = Vec::new();
+        let mut current_level = self.leaves.clone();
+        let mut current_index = leaf_index;
+        
+        while current_level.len() > 1 {
+            // Find sibling
+            let sibling_index = if current_index % 2 == 0 {
+                // Current is left child, sibling is right
+                if current_index + 1 < current_level.len() {
+                    Some(current_index + 1)
+                } else {
+                    None // No sibling for this node
+                }
+            } else {
+                // Current is right child, sibling is left
+                Some(current_index - 1)
+            };
+
+            if let Some(sibling_idx) = sibling_index {
+                sibling_hashes.push(current_level[sibling_idx]);
+            }
+
+            // Move to next level
+            let mut next_level = Vec::new();
+            for i in (0..current_level.len()).step_by(2) {
+                if i + 1 < current_level.len() {
+                    let hash = Self::hash_pair(current_level[i], current_level[i + 1]);
+                    next_level.push(hash);
+                } else {
+                    let hash = Self::hash_single(current_level[i]);
+                    next_level.push(hash);
+                }
+            }
+            
+            current_level = next_level;
+            current_index = current_index / 2;
+        }
+
+        Ok(Proof {
+            leaf_index,
+            sibling_hashes,
+            peak_bagging: vec![], // Not needed for simple Merkle tree
+        })
+    }
+
     /// Verifies a Merkle proof for a given leaf
     pub async fn verify_proof(&self, proof: Proof, leaf: [u8; 32]) -> Result<bool> {
-        let leaf_str = format!("0x{}", hex::encode(leaf));
-        Ok(self.mmr.verify_proof(proof, leaf_str, None).await?)
+        let root = self.get_root().await?;
+        
+        let mut current_hash = leaf;
+        let mut current_index = proof.leaf_index;
+        
+        for sibling_hash in proof.sibling_hashes {
+            if current_index % 2 == 0 {
+                // Current is left child
+                current_hash = Self::hash_pair(current_hash, sibling_hash);
+            } else {
+                // Current is right child
+                current_hash = Self::hash_pair(sibling_hash, current_hash);
+            }
+            current_index = current_index / 2;
+        }
+        
+        Ok(current_hash == root)
     }
 }
 
@@ -134,6 +214,25 @@ mod tests {
             "Should not find proof for non-existent leaf"
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_empty_tree() -> Result<()> {
+        let builder = L1MerkleTreeBuilder::new();
+        let root = builder.get_root().await?;
+        assert_eq!(root, [0u8; 32]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_leaf_tree() -> Result<()> {
+        let mut builder = L1MerkleTreeBuilder::new();
+        let leaf = [42u8; 32];
+        builder.build_merkle(vec![leaf]).await?;
+        
+        let root = builder.get_root().await?;
+        assert_eq!(root, leaf);
         Ok(())
     }
 }
