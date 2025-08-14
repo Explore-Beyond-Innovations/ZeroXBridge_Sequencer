@@ -1,3 +1,4 @@
+mod common;
 #[cfg(test)]
 mod tests {
     use mockall::mock;
@@ -8,6 +9,8 @@ mod tests {
     use zeroxbridge_sequencer::queue::l2_queue::L2Transaction;
     use zeroxbridge_sequencer::relayer::starknet_relayer::StarknetRelayer;
     use zeroxbridge_sequencer::relayer::starknet_relayer::StarknetRelayerConfig;
+
+    use crate::common;
 
     // Mock the Starknet provider
     mock! {
@@ -45,7 +48,12 @@ mod tests {
             proof_data: Some(
                 r#"{
                 "proof_array": ["0x1", "0x2", "0x3"],
-                "merkle_root": "0xabcdef123456789"
+                "merkle_root": "0xabcdef123456789",
+                "commitment_hash": "0x12345678",
+                "eth_address": "0x12345",
+                "r": "0x987654321",
+                "s": "0xdeadbeef",
+                "y_parity": false
             }"#
                 .to_string(),
             ),
@@ -54,14 +62,16 @@ mod tests {
 
     fn create_sample_config() -> StarknetRelayerConfig {
         StarknetRelayerConfig {
-            bridge_contract_address: "0x1234567890abcdef".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            private_key: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            // local deployment on devnet
+            bridge_contract_address: "0x3ba661fdcfa38f20f5e0024e98b014b6ec32cd932f43dbe1d7eb8b1c70c1059".to_string(),
+            proof_registry_contract_address: "0xac1c2426dcdc8dca73ae85b1c50c6e6801251b55d88beb3633965fa5fec694".to_string(),
+            rpc_url: "http://localhost:5050".to_string(),
+            private_key: "0x0000000000000000000000000000000071d7bb07b9a64f6f78ac4c816aff4da9"
                 .to_string(),
             max_retries: 3,
             retry_delay_ms: 1000,
             transaction_timeout_ms: 30000,
-            account_address: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            account_address: "0x064b48806902a367c8598f4f95c305e8c1a1acba5f082d294a43793113115691"
                 .to_string(),
         }
     }
@@ -125,6 +135,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_transaction_success() {
+        common::init_tracing();
         let config = create_sample_config();
         let pool = create_test_db_pool().await;
 
