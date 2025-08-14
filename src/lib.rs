@@ -6,4 +6,5 @@ pub mod http;
 pub mod proof_client;
 pub mod queue;
 pub mod relayer;
+pub mod tree_builder;
 pub mod utils;

@@ -71,6 +71,13 @@ fn create_test_config() -> AppConfig {
         herodotus: HerodotusConfig {
             herodotus_endpoint: "https://test.example.com".to_string(),
         },
+        tree_builder: Some(TreeBuilderConfig {
+            poll_interval_seconds: Some(10),
+            batch_size: Some(100),
+            max_retries: Some(3),
+            retry_backoff_ms: Some(1000),
+            max_checkpoints: Some(1000),
+        }),
     }
 }
 
