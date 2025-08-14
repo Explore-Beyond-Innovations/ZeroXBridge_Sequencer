@@ -343,7 +343,19 @@ pub async fn update_deposit_with_proof(
     proof: serde_json::Value,
     merkle_root: String,
     leaf_index: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Validate proof structure by deserializing to typed struct
+    let typed_proof: crate::db::types::DatabaseProof = serde_json::from_value(proof.clone())
+        .map_err(|e| format!("Invalid proof format: {}", e))?;
+    
+    // Validate proof contents
+    typed_proof.validate()
+        .map_err(|e| format!("Proof validation failed: {}", e))?;
+    
+    // Re-serialize validated proof to ensure consistent format
+    let validated_proof = serde_json::to_value(typed_proof)
+        .map_err(|e| format!("Failed to serialize validated proof: {}", e))?;
+
     sqlx::query!(
         r#"
         UPDATE deposits
@@ -356,12 +368,13 @@ pub async fn update_deposit_with_proof(
         WHERE id = $1
         "#,
         id,
-        proof,
+        validated_proof,
         merkle_root,
         leaf_index
     )
     .execute(conn)
-    .await?;
+    .await
+    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     Ok(())
 }

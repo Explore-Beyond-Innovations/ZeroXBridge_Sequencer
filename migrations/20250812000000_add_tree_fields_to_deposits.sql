@@ -1,4 +1,5 @@
 -- Add tree-related fields to deposits table for L1 tree builder
+BEGIN;
 
 -- Add leaf_index field for ordering deposits in the tree
 ALTER TABLE deposits 
@@ -22,7 +23,16 @@ CREATE INDEX IF NOT EXISTS deposits_status_included_idx ON deposits (status, inc
 -- Create index on leaf_index for ordered processing
 CREATE INDEX IF NOT EXISTS deposits_leaf_index_idx ON deposits (leaf_index);
 
+-- Create partial unique index for leaf_index when included = true
+CREATE UNIQUE INDEX IF NOT EXISTS uq_deposits_leaf_index_included ON deposits(leaf_index) WHERE included = true;
+
+-- Add constraint to ensure rows with included = true have non-null leaf_index
+ALTER TABLE deposits ADD CONSTRAINT IF NOT EXISTS chk_deposits_leaf_index_required_if_included 
+CHECK (NOT included OR leaf_index IS NOT NULL);
+
 -- Update existing deposits to have PENDING_TREE_INCLUSION status if they are pending
 UPDATE deposits 
 SET status = 'PENDING_TREE_INCLUSION' 
 WHERE status = 'pending' AND included = FALSE;
+
+COMMIT;

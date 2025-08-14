@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use sha3::{Digest, Keccak256};
 use serde::{Serialize, Deserialize};
 
@@ -15,7 +14,7 @@ pub struct Proof {
 /// Simple Merkle tree implementation for L1 deposits
 pub struct L1MerkleTreeBuilder {
     leaves: Vec<[u8; 32]>,
-    tree_cache: HashMap<usize, [u8; 32]>,
+    levels: Vec<Vec<[u8; 32]>>,
 }
 
 impl L1MerkleTreeBuilder {
@@ -23,7 +22,7 @@ impl L1MerkleTreeBuilder {
     pub fn new() -> Self {
         Self {
             leaves: Vec::new(),
-            tree_cache: HashMap::new(),
+            levels: Vec::new(),
         }
     }
 
@@ -35,54 +34,54 @@ impl L1MerkleTreeBuilder {
         hasher.finalize().into()
     }
 
-    /// Hash a single node (for odd number of nodes)
-    fn hash_single(node: [u8; 32]) -> [u8; 32] {
-        let mut hasher = Keccak256::new();
-        hasher.update(&node);
-        hasher.finalize().into()
-    }
 
     /// Builds/appends to the Merkle tree from a list of commitment hashes
     pub async fn build_merkle(&mut self, leaves: Vec<[u8; 32]>) -> Result<()> {
         for leaf in leaves {
             self.leaves.push(leaf);
         }
-        // Clear cache when new leaves are added
-        self.tree_cache.clear();
+        self.rebuild_levels();
         Ok(())
+    }
+
+    /// Rebuild cached tree levels
+    fn rebuild_levels(&mut self) {
+        self.levels.clear();
+        
+        if self.leaves.is_empty() {
+            return;
+        }
+        
+        let mut current_level = self.leaves.clone();
+        self.levels.push(current_level.clone());
+        
+        while current_level.len() > 1 {
+            // If odd number of nodes, duplicate the last one
+            if current_level.len() % 2 == 1 {
+                let last_node = current_level[current_level.len() - 1];
+                current_level.push(last_node);
+            }
+            
+            let mut next_level = Vec::new();
+            for i in (0..current_level.len()).step_by(2) {
+                let hash = Self::hash_pair(current_level[i], current_level[i + 1]);
+                next_level.push(hash);
+            }
+            
+            current_level = next_level;
+            self.levels.push(current_level.clone());
+        }
     }
 
     /// Gets the current Merkle root
     pub async fn get_root(&self) -> Result<[u8; 32]> {
-        if self.leaves.is_empty() {
+        if self.levels.is_empty() {
             return Ok([0u8; 32]);
         }
-
-        if self.leaves.len() == 1 {
-            return Ok(self.leaves[0]);
-        }
-
-        let mut current_level = self.leaves.clone();
         
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-            
-            for i in (0..current_level.len()).step_by(2) {
-                if i + 1 < current_level.len() {
-                    // Pair exists, hash them together
-                    let hash = Self::hash_pair(current_level[i], current_level[i + 1]);
-                    next_level.push(hash);
-                } else {
-                    // Odd number, hash single node
-                    let hash = Self::hash_single(current_level[i]);
-                    next_level.push(hash);
-                }
-            }
-            
-            current_level = next_level;
-        }
-
-        Ok(current_level[0])
+        // Root is the single element in the last level
+        let root_level = &self.levels[self.levels.len() - 1];
+        Ok(root_level[0])
     }
 
     /// Generates a Merkle proof for a given leaf
@@ -100,41 +99,24 @@ impl L1MerkleTreeBuilder {
 
     /// Generate proof for a leaf at given index
     async fn generate_proof(&self, leaf_index: usize) -> Result<Proof> {
+        if leaf_index >= self.leaves.len() {
+            return Err(crate::error::TreeBuilderError::InvalidIndex.into());
+        }
+        
         let mut sibling_hashes = Vec::new();
-        let mut current_level = self.leaves.clone();
         let mut current_index = leaf_index;
         
-        while current_level.len() > 1 {
-            // Find sibling
-            let sibling_index = if current_index % 2 == 0 {
-                // Current is left child, sibling is right
-                if current_index + 1 < current_level.len() {
-                    Some(current_index + 1)
-                } else {
-                    None // No sibling for this node
-                }
-            } else {
-                // Current is right child, sibling is left
-                Some(current_index - 1)
-            };
-
-            if let Some(sibling_idx) = sibling_index {
-                sibling_hashes.push(current_level[sibling_idx]);
-            }
-
-            // Move to next level
-            let mut next_level = Vec::new();
-            for i in (0..current_level.len()).step_by(2) {
-                if i + 1 < current_level.len() {
-                    let hash = Self::hash_pair(current_level[i], current_level[i + 1]);
-                    next_level.push(hash);
-                } else {
-                    let hash = Self::hash_single(current_level[i]);
-                    next_level.push(hash);
-                }
+        // Walk through each level (except the root level)
+        for level in 0..(self.levels.len() - 1) {
+            let current_level = &self.levels[level];
+            let sibling_index = current_index ^ 1; // XOR with 1 to get sibling index
+            
+            // Add sibling hash if it exists in the original level (not duplicated)
+            if sibling_index < current_level.len() {
+                sibling_hashes.push(current_level[sibling_index]);
             }
             
-            current_level = next_level;
+            // Move to parent index
             current_index = current_index / 2;
         }
 

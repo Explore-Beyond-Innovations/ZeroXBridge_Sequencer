@@ -37,7 +37,7 @@ pub struct AppConfig {
     pub logging: LoggingConfig,
     pub oracle: OracleConfig,
     pub herodotus: HerodotusConfig,
-    pub tree_builder: TreeBuilderConfig,
+    pub tree_builder: Option<TreeBuilderConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,13 +156,13 @@ pub struct OracleConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TreeBuilderConfig {
     /// Interval between polling cycles (seconds)
-    pub poll_interval_seconds: u64,
+    pub poll_interval_seconds: Option<u64>,
     /// Maximum number of deposits to process per batch
-    pub batch_size: i64,
+    pub batch_size: Option<i64>,
     /// Maximum retry attempts for failed operations
-    pub max_retries: u32,
+    pub max_retries: Option<u32>,
     /// Retry backoff base duration (milliseconds)
-    pub retry_backoff_ms: u64,
+    pub retry_backoff_ms: Option<u64>,
     /// Maximum memory checkpoints to keep
-    pub max_checkpoints: usize,
+    pub max_checkpoints: Option<usize>,
 }

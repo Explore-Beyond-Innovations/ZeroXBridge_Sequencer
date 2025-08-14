@@ -4,4 +4,4 @@
 //! It includes the tree builder client that processes pending deposits and
 //! maintains the in-memory tree state.
 
-pub mod client;
+pub mod l1_client;

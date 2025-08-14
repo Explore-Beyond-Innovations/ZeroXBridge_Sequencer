@@ -29,7 +29,12 @@ export DATABASE_URL=postgres://postgres:postgres@localhost:5434/zeroxdb
 sqlx migrate run
 # or
 make migrate-run
+
+# Prepare SQLx offline mode (for production deployments)
+cargo sqlx prepare
 ```
+
+**Note:** The migrations are now embedded in the binary for production deployments, so you don't need to worry about migration paths at runtime.
 
 ### 2. Environment Configuration
 
@@ -135,7 +140,7 @@ Every `poll_interval_seconds` (default 10), the service:
 The service requires these fields in the `deposits` table:
 
 ```sql
--- Added by migration 20250111000000_add_tree_fields_to_deposits.sql
+-- Added by migration 20250812000000_add_tree_fields_to_deposits.sql
 ALTER TABLE deposits 
 ADD COLUMN IF NOT EXISTS leaf_index BIGINT,
 ADD COLUMN IF NOT EXISTS proof JSONB,

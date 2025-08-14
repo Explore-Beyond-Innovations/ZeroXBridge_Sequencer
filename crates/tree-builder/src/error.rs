@@ -12,6 +12,8 @@ pub enum TreeBuilderError {
     TreeError(String),
     #[error("Invalid proof: {0}")]
     ProofError(String),
+    #[error("Invalid leaf index: index out of bounds")]
+    InvalidIndex,
     #[error(transparent)]
     FromHexError(#[from] hex::FromHexError),
 }
