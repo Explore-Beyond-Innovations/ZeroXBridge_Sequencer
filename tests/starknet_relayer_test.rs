@@ -48,7 +48,12 @@ mod tests {
             proof_data: Some(
                 r#"{
                 "proof_array": ["0x1", "0x2", "0x3"],
-                "merkle_root": "0xabcdef123456789"
+                "merkle_root": "0xabcdef123456789",
+                "commitment_hash": "0x12345678",
+                "eth_address": "0x12345",
+                "r": "0x987654321",
+                "s": "0xdeadbeef",
+                "y_parity": false
             }"#
                 .to_string(),
             ),
@@ -57,7 +62,9 @@ mod tests {
 
     fn create_sample_config() -> StarknetRelayerConfig {
         StarknetRelayerConfig {
-            bridge_contract_address: "0x656a6fa9c12526dd9ba8e4d7d33d0dc8c2da4b7196f7e796f1058f200f1a2e5".to_string(),
+            // local deployment on devnet
+            bridge_contract_address: "0x3ba661fdcfa38f20f5e0024e98b014b6ec32cd932f43dbe1d7eb8b1c70c1059".to_string(),
+            proof_registry_contract_address: "0xac1c2426dcdc8dca73ae85b1c50c6e6801251b55d88beb3633965fa5fec694".to_string(),
             rpc_url: "http://localhost:5050".to_string(),
             private_key: "0x0000000000000000000000000000000071d7bb07b9a64f6f78ac4c816aff4da9"
                 .to_string(),
