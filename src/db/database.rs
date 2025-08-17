@@ -290,7 +290,6 @@ pub async fn get_user_latest_deposit(
     conn: &PgPool,
     addr: &str,
 ) -> Result<Option<Deposit>, sqlx::Error> {
-
     println!("address gotten is :::{:?}", addr);
     let deposit = sqlx::query_as!(
         Deposit,

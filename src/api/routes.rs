@@ -22,8 +22,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/", get(hello_world))
         .route(
             "/deposit",
-            post(handle_deposit_post)
-                .get(handle_get_pending_deposits)
+            post(handle_deposit_post).get(handle_get_pending_deposits),
         )
         .route("/deposits", get(fetch_user_deposits_handler))
         .route("/deposits/latest", get(fetch_user_latest_deposit_handler))

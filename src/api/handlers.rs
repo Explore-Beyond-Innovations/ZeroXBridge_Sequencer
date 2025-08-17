@@ -267,9 +267,7 @@ pub async fn fetch_user_latest_deposit_handler(
     let deposit = get_user_latest_deposit(&pool, &key).await;
 
     match deposit {
-        Ok(Some(dp)) => Ok(Json(DepositResponse {
-            deposit_id: dp.id,
-        })),
+        Ok(Some(dp)) => Ok(Json(DepositResponse { deposit_id: dp.id })),
         Ok(None) => Err((
             StatusCode::NOT_FOUND,
             "No deposits found for the given user".to_string(),
@@ -292,7 +290,10 @@ pub async fn fetch_user_deposits_handler(
 }
 
 fn extract_user_key(payload: &FetchDepositQuery) -> Result<String, (StatusCode, String)> {
-    match (payload.stark_pub_key.as_ref(), payload.user_address.as_ref()) {
+    match (
+        payload.stark_pub_key.as_ref(),
+        payload.user_address.as_ref(),
+    ) {
         (Some(stark), _) => Ok(stark.trim().to_string()),
         (None, Some(user)) => Ok(user.trim().to_string()),
         (None, None) => Err((
