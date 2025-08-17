@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 use crate::api::handlers::{
     compute_poseidon_hash, create_withdrawal, get_pending_withdrawals, handle_deposit_post,
-    handle_get_pending_deposits, compute_hash_handler,
+    handle_get_pending_deposits, compute_hash_handler, fetch_user_latest_deposit_handler, fetch_user_deposits_handler
 };
 
 #[derive(Clone)]
@@ -21,8 +21,11 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/", get(hello_world))
         .route(
             "/deposit",
-            post(handle_deposit_post).get(handle_get_pending_deposits),
+            post(handle_deposit_post)
+                            .get(handle_get_pending_deposits)
+                            .get(fetch_user_deposits_handler),
         )
+        .route("/deposits/latest", get(fetch_user_latest_deposit_handler))
         .route(
             "/withdrawals",
             post(create_withdrawal).get(get_pending_withdrawals),

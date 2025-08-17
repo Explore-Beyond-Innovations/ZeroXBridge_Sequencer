@@ -280,7 +280,7 @@ pub async fn fetch_user_latest_deposit_handler
 }
 
 pub async fn fetch_user_deposits_handler
-(Extension(pool): Extension<PgPool>, Query(payload): Query<FetchDepositQuery>) -> Result<Vec<Deposit>, (StatusCode, String)>{
+(Extension(pool): Extension<PgPool>, Query(payload): Query<FetchDepositQuery>) -> Result<Json<Vec<Deposit>>, (StatusCode, String)>{
     let key = match (payload.stark_pub_key.as_ref() , payload.user_address) {
         (Some(stark), _) => stark.trim().to_string(),
         (None, Some(user)) => user.trim().to_string(),
@@ -295,5 +295,5 @@ pub async fn fetch_user_deposits_handler
     let deposit = get_user_deposits(&pool, &key, 2).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(deposit)
+    Ok(Json(deposit))
 }
