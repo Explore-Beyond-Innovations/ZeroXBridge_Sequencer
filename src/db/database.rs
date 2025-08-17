@@ -1,3 +1,4 @@
+// use anyhow::Ok;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
@@ -283,6 +284,23 @@ pub async fn get_last_processed_block(
 
     Ok(record.map(|r| r.last_block as u64))
 }
+
+pub async fn get_user_latest_deposit(conn: &PgPool, addr: &str,) -> Result<Option<Deposit>, sqlx::Error> {
+    let deposit = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            ORDER BY created_at DESC 
+        "#,
+        addr
+    ).fetch_optional(conn).await?;
+
+    Ok(deposit)
+}
+
+pub async fn get_user_deposits() {}
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
