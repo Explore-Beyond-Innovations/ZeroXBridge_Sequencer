@@ -1,4 +1,3 @@
-// use anyhow::Ok;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
@@ -300,7 +299,23 @@ pub async fn get_user_latest_deposit(conn: &PgPool, addr: &str,) -> Result<Optio
     Ok(deposit)
 }
 
-pub async fn get_user_deposits() {}
+pub async fn get_user_deposits(conn: &PgPool, addr: &str, max_retries: u32) -> Result<Vec<Deposit>, sqlx::Error> {
+    let deposits = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            AND 
+            retry_count < $2 
+            ORDER BY created_at DESC
+        "#,
+        addr,
+        max_retries as i32
+    ).fetch_all(conn).await?;
+
+    Ok(deposits)
+}
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
