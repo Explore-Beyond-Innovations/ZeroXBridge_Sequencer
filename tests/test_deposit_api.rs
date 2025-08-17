@@ -32,9 +32,8 @@ mod tests {
 
 #[tokio::test]
 async fn test_fetch_user_latest_deposit_handler_success() {
-    let (app, pool) = setup_test_app().await;
+    let (app, _) = setup_test_app().await;
     let stark_pub_key = "0x1111111111111111111111111111111111111111";
-    // let router = create_router(app.db.clone());
 
     let request = Request::builder()
             .method("GET")
@@ -50,7 +49,7 @@ async fn test_fetch_user_latest_deposit_handler_success() {
 
 #[tokio::test]
 async fn test_fetch_user_latest_deposit_with_user_address_handler() {
-    let (app, pool) = setup_test_app().await;
+    let (app, _) = setup_test_app().await;
     let user_address = "0x1111111111111111111111111111111111111111";
 
     let request = Request::builder()
@@ -67,7 +66,7 @@ async fn test_fetch_user_latest_deposit_with_user_address_handler() {
 
 #[tokio::test]
 async fn test_user_address_not_found_handler() {
-    let (app, pool) = setup_test_app().await;
+    let (app, _) = setup_test_app().await;
     let user_address = "0x1111111111111111111111111111111111111qqqq";
 
     let request = Request::builder()
@@ -84,7 +83,7 @@ async fn test_user_address_not_found_handler() {
 
 #[tokio::test]
 async fn test_user_address_for_all_deposits() {
-    let (app, pool) = setup_test_app().await;
+    let (app, _) = setup_test_app().await;
     let user_address = "0x1111111111111111111111111111111111111111";
 
     let request = Request::builder()
@@ -97,7 +96,6 @@ async fn test_user_address_for_all_deposits() {
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
 }
 
 
