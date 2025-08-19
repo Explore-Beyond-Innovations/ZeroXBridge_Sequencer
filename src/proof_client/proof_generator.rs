@@ -6,7 +6,10 @@ pub fn run_scarb_build(project_path: &str) -> Result<PathBuf, String> {
     let target_dir = Path::new(project_path);
 
     if !target_dir.exists() {
-        return Err(format!("No Scarb project in this directory: {}", project_path));
+        return Err(format!(
+            "No Scarb project in this directory: {}",
+            project_path
+        ));
     }
 
     println!("Building Scarb project at {:?}", target_dir);

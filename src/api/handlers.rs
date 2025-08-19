@@ -1,13 +1,14 @@
+use axum::extract::Query;
 use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
-    Withdrawal,
+    fetch_pending_deposits, fetch_pending_withdrawals, get_user_deposits, get_user_latest_deposit,
+    insert_deposit, insert_withdrawal, Deposit, Withdrawal,
 };
-use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use starknet::core::types::Felt;
 
 // UPDATED: Added l1_token field
@@ -247,4 +248,57 @@ pub async fn compute_hash_handler(
         },
     };
     Ok(Json(response))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FetchDepositQuery {
+    pub stark_pub_key: Option<String>,
+    pub user_address: Option<String>,
+}
+
+// pub struct
+
+pub async fn fetch_user_latest_deposit_handler(
+    Extension(pool): Extension<PgPool>,
+    Query(payload): Query<FetchDepositQuery>,
+) -> Result<Json<Deposit>, (StatusCode, String)> {
+    let key = extract_user_key(&payload)?;
+
+    let deposit = get_user_latest_deposit(&pool, &key).await;
+
+    match deposit {
+        Ok(Some(dp)) => Ok(Json(dp)),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            "No deposits found for the given user".to_string(),
+        )),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn fetch_user_deposits_handler(
+    Extension(pool): Extension<PgPool>,
+    Query(payload): Query<FetchDepositQuery>,
+) -> Result<Json<Vec<Deposit>>, (StatusCode, String)> {
+    let key = extract_user_key(&payload)?;
+
+    let deposit = get_user_deposits(&pool, &key, 2)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(deposit))
+}
+
+fn extract_user_key(payload: &FetchDepositQuery) -> Result<String, (StatusCode, String)> {
+    match (
+        payload.stark_pub_key.as_ref(),
+        payload.user_address.as_ref(),
+    ) {
+        (Some(stark), _) => Ok(stark.trim().to_string()),
+        (None, Some(user)) => Ok(user.trim().to_string()),
+        (None, None) => Err((
+            StatusCode::BAD_REQUEST,
+            "Either stark_pub_key or user_address must be provided".into(),
+        )),
+    }
 }

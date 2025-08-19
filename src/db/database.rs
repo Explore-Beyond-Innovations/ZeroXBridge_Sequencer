@@ -86,11 +86,11 @@ pub async fn insert_deposit(
 }
 
 pub async fn upsert_deposit(
-    conn:&PgPool,
+    conn: &PgPool,
     stark_pub_key: &str,
     amount: i64,
     commitment_hash: &str,
-    status: &str
+    status: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
@@ -104,7 +104,9 @@ pub async fn upsert_deposit(
         amount,
         commitment_hash,
         status,
-    ).execute(conn).await?;
+    )
+    .execute(conn)
+    .await?;
 
     Ok(())
 }
@@ -282,6 +284,53 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+pub async fn get_user_latest_deposit(
+    conn: &PgPool,
+    addr: &str,
+) -> Result<Option<Deposit>, sqlx::Error> {
+    println!("address gotten is :::{:?}", addr);
+    let deposit = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            ORDER BY created_at DESC 
+        "#,
+        addr
+    )
+    .fetch_optional(conn)
+    .await?;
+
+    println!("here is good ::: {:?}", deposit);
+
+    Ok(deposit)
+}
+
+pub async fn get_user_deposits(
+    conn: &PgPool,
+    addr: &str,
+    max_retries: u32,
+) -> Result<Vec<Deposit>, sqlx::Error> {
+    let deposits = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            AND 
+            retry_count < $2 
+            ORDER BY created_at DESC
+        "#,
+        addr,
+        max_retries as i32
+    )
+    .fetch_all(conn)
+    .await?;
+
+    Ok(deposits)
 }
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
