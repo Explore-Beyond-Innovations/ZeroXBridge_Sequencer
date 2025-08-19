@@ -1,13 +1,13 @@
-use alloy_primitives::{Address, B256, BlockNumber, U256};
 use alloy::rpc::types::Log;
+use alloy_primitives::{Address, BlockNumber, B256, U256};
 use anyhow::Result;
 use mockall::predicate::*;
 use mockall::*;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use zeroxbridge_sequencer::config::AppConfig;
-use zeroxbridge_sequencer::events::l1_event_watcher::ZeroXBridge;
 use zeroxbridge_sequencer::db::database::DepositHashAppended;
+use zeroxbridge_sequencer::events::l1_event_watcher::ZeroXBridge;
 
 // Mock the Provider
 mock! {
@@ -55,7 +55,12 @@ mod tests {
             ],
         };
         Log {
-            block_hash: Some(B256::from_str_hex("0x0000000000000000000000000000000000000000000000000000000000001234").unwrap()),
+            block_hash: Some(
+                B256::from_str_hex(
+                    "0x0000000000000000000000000000000000000000000000000000000000001234",
+                )
+                .unwrap(),
+            ),
             block_number: Some(block_number),
             transaction_hash: Some(B256::from_str_hex(tx_hash).unwrap()),
             transaction_index: Some(0u64.into()),
@@ -85,7 +90,12 @@ mod tests {
             ],
         };
         Log {
-            block_hash: Some(B256::from_str_hex("0x0000000000000000000000000000000000000000000000000000000000001234").unwrap()),
+            block_hash: Some(
+                B256::from_str_hex(
+                    "0x0000000000000000000000000000000000000000000000000000000000001234",
+                )
+                .unwrap(),
+            ),
             block_number: Some(block_number),
             transaction_hash: Some(B256::from_str_hex(tx_hash).unwrap()),
             transaction_index: Some(0u64.into()),
@@ -139,18 +149,20 @@ mod tests {
         // Check first event
         let first_event = &result[0];
         assert_eq!(first_event.block_number.unwrap(), 100);
-       assert_eq!(first_event.data().commitment, U256::from(1_000_000)); // amount
+        assert_eq!(first_event.data().commitment, U256::from(1_000_000)); // amount
 
         // Check second event
         let second_event = &result[1];
         assert_eq!(second_event.block_number.unwrap(), 101);
-         assert_eq!(second_event.data().commitment, U256::from(2_000_000));// amount
+        assert_eq!(second_event.data().commitment, U256::from(2_000_000)); // amount
 
         // Verify block tracker was updated
-        let last_block =
-            sqlx::query!("SELECT last_block FROM block_trackers WHERE key = $1", BLOCK_TRACKER_KEY)
-                .fetch_one(&pool)
-                .await?;
+        let last_block = sqlx::query!(
+            "SELECT last_block FROM block_trackers WHERE key = $1",
+            BLOCK_TRACKER_KEY
+        )
+        .fetch_one(&pool)
+        .await?;
 
         assert_eq!(last_block.last_block, 101);
 
@@ -183,8 +195,8 @@ mod tests {
         ];
 
         let test_logs = vec![
-        create_test_deposit_log(100, "0xabc", 1, "0x1000000"),
-        create_test_deposit_log(101, "0xdef", 2, "0x2000000"),
+            create_test_deposit_log(100, "0xabc", 1, "0x1000000"),
+            create_test_deposit_log(101, "0xdef", 2, "0x2000000"),
         ];
 
         // Mock get_logs response for DepositHashAppended
@@ -192,13 +204,14 @@ mod tests {
             .expect_get_logs()
             .returning(move |_| Ok(test_logs.clone()));
 
-        let result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
-            &pool,
-            "http://localhost:8545",
-            95,
-            "0x1234567890123456789012345678901234567890",
-        )
-        .await?;
+        let result =
+            zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
+                &pool,
+                "http://localhost:8545",
+                95,
+                "0x1234567890123456789012345678901234567890",
+            )
+            .await?;
 
         assert_eq!(result.len(), 2);
 
@@ -268,13 +281,14 @@ mod tests {
             .expect_get_logs()
             .returning(move |_| Ok(Vec::new()));
 
-        let hash_result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
-            &pool,
-            "http://localhost:8545",
-            95,
-            "0x1234567890123456789012345678901234567890",
-        )
-        .await?;
+        let hash_result =
+            zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
+                &pool,
+                "http://localhost:8545",
+                95,
+                "0x1234567890123456789012345678901234567890",
+            )
+            .await?;
 
         // Empty logs should return empty vector
         assert!(hash_result.is_empty());
