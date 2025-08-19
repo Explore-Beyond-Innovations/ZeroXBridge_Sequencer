@@ -261,13 +261,13 @@ pub struct FetchDepositQuery {
 pub async fn fetch_user_latest_deposit_handler(
     Extension(pool): Extension<PgPool>,
     Query(payload): Query<FetchDepositQuery>,
-) -> Result<Json<DepositResponse>, (StatusCode, String)> {
+) -> Result<Json<Deposit>, (StatusCode, String)> {
     let key = extract_user_key(&payload)?;
 
     let deposit = get_user_latest_deposit(&pool, &key).await;
 
     match deposit {
-        Ok(Some(dp)) => Ok(Json(DepositResponse { deposit_id: dp.id })),
+        Ok(Some(dp)) => Ok(Json(dp)),
         Ok(None) => Err((
             StatusCode::NOT_FOUND,
             "No deposits found for the given user".to_string(),
