@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool, Postgres, Transaction};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Withdrawal {
@@ -97,14 +97,14 @@ pub async fn insert_deposit(
 }
 
 pub async fn insert_deposit_with_l2_hash(
-    conn: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     stark_pub_key: &str,
     amount: i64,
     commitment_hash: &str,
     l2_hash: &str,
     nonce: i64,
 ) -> Result<i32, sqlx::Error> {
-    let row_id = sqlx::query_scalar!(
+    sqlx::query_scalar!(
         r#"
         INSERT INTO deposits (stark_pub_key, amount, commitment_hash, l2_hash, nonce, status)
         VALUES ($1, $2, $3, $4, $5, 'pending')
@@ -116,12 +116,9 @@ pub async fn insert_deposit_with_l2_hash(
         l2_hash,
         nonce
     )
-    .fetch_one(conn)
-    .await?;
-
-    Ok(row_id)
+    .fetch_one(&mut **tx)
+    .await
 }
-
 pub async fn upsert_deposit(
     conn: &PgPool,
     stark_pub_key: &str,
@@ -324,52 +321,23 @@ pub async fn get_last_processed_block(
 }
 
 pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i64, sqlx::Error> {
-    let mut tx = conn.begin().await?;
-
-    let current_nonce = sqlx::query_scalar!(
+    // Assign nonce atomically:
+    // - first insert returns 0
+    // - subsequent calls increment and return the new value
+    let assigned = sqlx::query_scalar!(
         r#"
-        SELECT current_nonce FROM deposit_nonces WHERE stark_pubkey = $1
+        INSERT INTO deposit_nonces (stark_pubkey, current_nonce)
+        VALUES ($1, 0)
+        ON CONFLICT (stark_pubkey) DO UPDATE
+          SET current_nonce = deposit_nonces.current_nonce + 1,
+              updated_at = NOW()
+        RETURNING current_nonce
         "#,
         stark_pubkey
     )
-    .fetch_optional(&mut *tx)
+    .fetch_one(conn)
     .await?;
-
-    match current_nonce {
-        Some(nonce) => {
-            let new_nonce = nonce + 1;
-            sqlx::query!(
-                r#"
-                UPDATE deposit_nonces 
-                SET current_nonce = $2, updated_at = NOW() 
-                WHERE stark_pubkey = $1
-                "#,
-                stark_pubkey,
-                new_nonce
-            )
-            .execute(&mut *tx)
-            .await?;
-
-            tx.commit().await?;
-            Ok(new_nonce)
-        }
-        None => {
-            let initial_nonce = 0i64;
-            sqlx::query!(
-                r#"
-                INSERT INTO deposit_nonces (stark_pubkey, current_nonce) 
-                VALUES ($1, $2)
-                "#,
-                stark_pubkey,
-                initial_nonce
-            )
-            .execute(&mut *tx)
-            .await?;
-
-            tx.commit().await?;
-            Ok(initial_nonce)
-        }
-    }
+    Ok(assigned)
 }
 
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {

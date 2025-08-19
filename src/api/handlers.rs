@@ -1,10 +1,10 @@
 use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, get_or_create_nonce, insert_deposit,
+    fetch_pending_deposits, fetch_pending_withdrawals, get_or_create_nonce,
     insert_deposit_with_l2_hash, insert_withdrawal, Deposit, Withdrawal,
 };
 use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
@@ -104,35 +104,28 @@ pub async fn handle_deposit_post(
         }
     };
 
-    // Get or create nonce for the user
+    let mut tx: Transaction<'_, Postgres> = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     let nonce = get_or_create_nonce(&pool, &payload.stark_pub_key)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Get current timestamp
     let timestamp = Utc::now().timestamp() as u64;
-
-    // Compute L2 hash using internal Poseidon hash logic with BatchHash method
-    let poseidon_request = PoseidonHashRequest {
-        recipient: payload.stark_pub_key.clone(),
-        amount: payload.amount as u128,
-        nonce: nonce as u64,
-        timestamp,
-        hash_method: Some("BatchHash".to_string()),
-    };
 
     let l2_hash = compute_poseidon_commitment_hash(
         recipient_felt,
-        poseidon_request.amount,
-        poseidon_request.nonce,
-        poseidon_request.timestamp,
+        payload.amount as u128,
+        nonce as u64,
+        timestamp,
         HashMethod::BatchHash,
     );
-
     let l2_hash_hex = format!("0x{:x}", l2_hash);
 
     let deposit_id = insert_deposit_with_l2_hash(
-        &pool,
+        &mut tx,
         &payload.stark_pub_key,
         payload.amount,
         &payload.commitment_hash,
@@ -142,6 +135,9 @@ pub async fn handle_deposit_post(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(DepositResponse { deposit_id }))
 }
 
@@ -231,13 +227,15 @@ pub async fn compute_poseidon_hash(
     let method = match payload.hash_method.as_deref() {
         Some("BatchHash") | Some("batch") | None => HashMethod::BatchHash,
         Some("SequentialPairwise") | Some("sequential") => HashMethod::SequentialPairwise,
-        Some(method) => return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
+        Some(method) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
                 "Invalid hash method: '{}'. Valid options are 'BatchHash' or 'SequentialPairwise'",
                 method
             ),
-        )),
+            ))
+        }
     };
 
     // Compute the Poseidon hash using the utility function
