@@ -1,14 +1,14 @@
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use axum::extract::Query;
 use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Postgres, Transaction};
-use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
-use chrono::Utc;
 
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, get_or_create_nonce,
-    insert_deposit_with_l2_hash, insert_withdrawal, Deposit, Withdrawal,
+    fetch_pending_deposits, fetch_pending_withdrawals, get_or_create_nonce, get_user_deposits,
+    get_user_latest_deposit, insert_deposit_with_l2_hash, Deposit, Withdrawal,
 };
 
 use starknet::core::types::Felt;
@@ -111,7 +111,7 @@ pub async fn handle_deposit_post(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let nonce = get_or_create_nonce(&pool, &payload.stark_pub_key)
+    let nonce = get_or_create_nonce(&mut tx, &payload.stark_pub_key)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -168,8 +168,21 @@ pub async fn create_withdrawal(
         return Err((StatusCode::BAD_REQUEST, "Invalid input".to_string()));
     }
 
+    // Just verify the Starknet address is a valid felt (do not store)
+    if Felt::from_hex(&payload.stark_pub_key).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid Starknet address format. Must be a valid hex format (0x...).".to_string(),
+        ));
+    };
+
+    let mut tx: Transaction<'_, Postgres> = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     // Fetch and increment the nonce for the user
-    let nonce = get_and_increment_withdrawal_nonce(&pool, &payload.stark_pub_key)
+    let nonce = get_and_increment_withdrawal_nonce(&mut tx, &payload.stark_pub_key)
         .await
         .map_err(|err| {
             (
@@ -188,19 +201,23 @@ pub async fn create_withdrawal(
         nonce: nonce as u64,
         time_stamp: timestamp,
     };
+
     if BurnData::hex_to_bytes32(&burn_data.caller).is_err() {
-        return Err((StatusCode::BAD_REQUEST, "Invalid stark_pubkey format".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid stark_pubkey format".to_string(),
+        ));
     }
     let l1_hash = burn_data.hash_to_hex_string();
 
     // Insert withdrawal with l1_hash and nonce
     let withdrawal_id = insert_withdrawal_v2(
-        &pool,
+        &mut tx,
         &payload.stark_pub_key,
         payload.amount,
         &payload.l1_token,
+        &payload.commitment_hash,
         &l1_hash,
-        &l1_hash, // commitment_hash and l1_hash are the same for now
         nonce,
     )
     .await
@@ -210,6 +227,10 @@ pub async fn create_withdrawal(
             format!("DB Error: {:?}", err),
         )
     })?;
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(WithrawalResponse { withdrawal_id }))
 }

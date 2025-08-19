@@ -78,7 +78,7 @@ pub async fn insert_withdrawal(
 
 /// Insert a withdrawal with l1_hash and nonce
 pub async fn insert_withdrawal_v2(
-    conn: &PgPool,
+    conn: &mut Transaction<'_, Postgres>,
     stark_pub_key: &str,
     amount: i64,
     l1_token: &str,
@@ -99,7 +99,7 @@ pub async fn insert_withdrawal_v2(
         l1_hash,
         nonce
     )
-    .fetch_one(conn)
+    .fetch_one(&mut **conn)
     .await?;
     Ok(row_id)
 }
@@ -352,7 +352,7 @@ pub async fn get_last_processed_block(
 
 /// Fetches and increments the withdrawal nonce for a user, creating a row if it does not exist
 pub async fn get_and_increment_withdrawal_nonce(
-    conn: &PgPool,
+    conn: &mut Transaction<'_, Postgres>,
     stark_pub_key: &str,
 ) -> Result<i64, sqlx::Error> {
     // Try to increment and return the new nonce
@@ -366,12 +366,15 @@ pub async fn get_and_increment_withdrawal_nonce(
         "#,
         stark_pub_key
     )
-    .fetch_one(conn)
+    .fetch_one(&mut **conn)
     .await?;
     Ok(rec)
 }
 
-pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i64, sqlx::Error> {
+pub async fn get_or_create_nonce(
+    conn: &mut Transaction<'_, Postgres>,
+    stark_pubkey: &str,
+) -> Result<i64, sqlx::Error> {
     // Assign nonce atomically:
     // - first insert returns 0
     // - subsequent calls increment and return the new value
@@ -386,7 +389,7 @@ pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i6
         "#,
         stark_pubkey
     )
-    .fetch_one(conn)
+    .fetch_one(&mut **conn)
     .await?;
     Ok(assigned)
 }
