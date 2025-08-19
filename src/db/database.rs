@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool};
+use sqlx::{postgres::PgPoolOptions, FromRow, PgConnection, PgPool, Postgres, Transaction};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Withdrawal {
@@ -22,8 +22,19 @@ pub struct Deposit {
     pub stark_pub_key: String,
     pub amount: i64,
     pub commitment_hash: String,
+    pub l2_hash: Option<String>,
+    pub nonce: Option<i64>,
     pub status: String, // "pending", "processed", etc.
     pub retry_count: i32,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct DepositNonce {
+    pub id: i32,
+    pub stark_pubkey: String,
+    pub current_nonce: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -85,6 +96,29 @@ pub async fn insert_deposit(
     Ok(row_id)
 }
 
+pub async fn insert_deposit_with_l2_hash(
+    tx: &mut Transaction<'_, Postgres>,
+    stark_pub_key: &str,
+    amount: i64,
+    commitment_hash: &str,
+    l2_hash: &str,
+    nonce: i64,
+) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"
+        INSERT INTO deposits (stark_pub_key, amount, commitment_hash, l2_hash, nonce, status)
+        VALUES ($1, $2, $3, $4, $5, 'pending')
+        RETURNING id
+        "#,
+        stark_pub_key,
+        amount,
+        commitment_hash,
+        l2_hash,
+        nonce
+    )
+    .fetch_one(&mut **tx)
+    .await
+}
 pub async fn upsert_deposit(
     conn: &PgPool,
     stark_pub_key: &str,
@@ -284,6 +318,26 @@ pub async fn get_last_processed_block(
     .await?;
 
     Ok(record.map(|r| r.last_block as u64))
+}
+
+pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i64, sqlx::Error> {
+    // Assign nonce atomically:
+    // - first insert returns 0
+    // - subsequent calls increment and return the new value
+    let assigned = sqlx::query_scalar!(
+        r#"
+        INSERT INTO deposit_nonces (stark_pubkey, current_nonce)
+        VALUES ($1, 0)
+        ON CONFLICT (stark_pubkey) DO UPDATE
+          SET current_nonce = deposit_nonces.current_nonce + 1,
+              updated_at = NOW()
+        RETURNING current_nonce
+        "#,
+        stark_pubkey
+    )
+    .fetch_one(conn)
+    .await?;
+    Ok(assigned)
 }
 
 pub async fn get_user_latest_deposit(
