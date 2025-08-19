@@ -1,3 +1,4 @@
+// <<<<<<< log
 use alloy_primitives::{Address, U256};
 use anyhow::Result;
 use zeroxbridge_sequencer::events::l1_event_watcher::{
@@ -9,6 +10,28 @@ use alloy::primitives::{B256};
 use alloy::sol_types::SolEvent;
 
 
+// =======
+// use alloy::rpc::types::Log;
+// use alloy_primitives::{Address, BlockNumber, B256, U256};
+// use anyhow::Result;
+// use mockall::predicate::*;
+// use mockall::*;
+// use sqlx::postgres::PgPoolOptions;
+// use sqlx::PgPool;
+// use zeroxbridge_sequencer::config::AppConfig;
+// use zeroxbridge_sequencer::db::database::DepositHashAppended;
+// use zeroxbridge_sequencer::events::l1_event_watcher::ZeroXBridge;
+
+// // Mock the Provider
+// mock! {
+//     pub EthereumProvider {
+//         fn get_logs(
+//             &self,
+//             filter: &alloy::rpc::types::Filter,
+//         ) -> Result<Vec<Log<ZeroXBridge::DepositEvent>>, Box<dyn std::error::Error>>;
+//     }
+// }
+// >>>>>>> main
 
 #[cfg(test)]
 mod tests {
@@ -57,6 +80,7 @@ mod tests {
             newRoot: new_root,
             elementCount: element_count,
         };
+// <<<<<<< log
 
         // Verify all fields are set correctly
         assert_eq!(event.depositId, deposit_id);
@@ -109,11 +133,63 @@ mod tests {
                 println!("Database connection failed (expected in some test environments): {}", e);
                 Ok(())
             }
+// =======
+//         Log {
+//             block_hash: Some(
+//                 B256::from_str_hex(
+//                     "0x0000000000000000000000000000000000000000000000000000000000001234",
+//                 )
+//                 .unwrap(),
+//             ),
+//             block_number: Some(block_number),
+//             transaction_hash: Some(B256::from_str_hex(tx_hash).unwrap()),
+//             transaction_index: Some(0u64.into()),
+//             log_index: Some(0u64.into()),
+//             removed: false,
+//             block_timestamp: Some(0u64),
+//             inner,
+//         }
+//     }
+
+//     // Helper function to create a test DepositHashAppended log
+//     fn create_test_deposit_hash_log(
+//         block_number: u64,
+//         tx_hash: &str,
+//         index: u64,
+//         commitment_hash: &str,
+//         root_hash: &str,
+//         elements_count: u64,
+//     ) -> Log<ZeroXBridge::DepositHashAppended> {
+//         let inner = alloy_primitives::Log {
+//             address: Address::parse("0x1234567890123456789012345678901234567890").unwrap(),
+//             data: vec![
+//                 U256::from(index),
+//                 B256::from_str_hex(commitment_hash).unwrap(),
+//                 B256::from_str_hex(root_hash).unwrap(),
+//                 U256::from(elements_count),
+//             ],
+//         };
+//         Log {
+//             block_hash: Some(
+//                 B256::from_str_hex(
+//                     "0x0000000000000000000000000000000000000000000000000000000000001234",
+//                 )
+//                 .unwrap(),
+//             ),
+//             block_number: Some(block_number),
+//             transaction_hash: Some(B256::from_str_hex(tx_hash).unwrap()),
+//             transaction_index: Some(0u64.into()),
+//             log_index: Some(0u64.into()),
+//             removed: false,
+//             block_timestamp: Some(0u64),
+//             inner,
+// >>>>>>> main
         }
     }
 
     // Integration test that requires a running database
     #[tokio::test]
+// <<<<<<< log
     async fn test_fetch_deposit_events_integration() -> Result<()> {
         // This test will only run if we can connect to the database
         if let Ok(mut pool) = setup_test_db().await {
@@ -140,19 +216,164 @@ mod tests {
         } else {
             println!("Skipping integration test - no database connection available");
         }
+// =======
+//     async fn test_deposit_event_parsing() -> Result<()> {
+//         let pool = setup_test_db().await;
+//         let mut mock_provider = MockEthereumProvider::new();
+
+//         // Create test events
+//         let test_logs = vec![
+//             create_test_deposit_log(
+//                 100,
+//                 "0x123",
+//                 "0x0000000000000000000000000000000000000000",
+//                 "0x1234567890abcdef1234567890abcdef12345678",
+//                 1_000_000,
+//                 "0xabc0000000000000000000000000000000000000000000000000000000000000",
+//             ),
+//             create_test_deposit_log(
+//                 101,
+//                 "0x456",
+//                 "0x0000000000000000000000000000000000000001",
+//                 "0xfedcba0987654321fedcba0987654321fedcba09",
+//                 2_000_000,
+//                 "0xdef0000000000000000000000000000000000000000000000000000000000000",
+//             ),
+//         ];
+
+//         // Mock get_logs response
+//         mock_provider
+//             .expect_get_logs()
+//             .returning(move |_| Ok(test_logs.clone()));
+
+//         let result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_l1_deposit_events(
+//             &pool,
+//             "http://localhost:8545",
+//             95u64,
+//             "0x1234567890123456789012345678901234567890",
+//         )
+//         .await?;
+
+//         assert_eq!(result.len(), 2);
+
+//         // Check first event
+//         let first_event = &result[0];
+//         assert_eq!(first_event.block_number.unwrap(), 100);
+//         assert_eq!(first_event.data().commitment, U256::from(1_000_000)); // amount
+
+//         // Check second event
+//         let second_event = &result[1];
+//         assert_eq!(second_event.block_number.unwrap(), 101);
+//         assert_eq!(second_event.data().commitment, U256::from(2_000_000)); // amount
+
+//         // Verify block tracker was updated
+//         let last_block = sqlx::query!(
+//             "SELECT last_block FROM block_trackers WHERE key = $1",
+//             BLOCK_TRACKER_KEY
+//         )
+//         .fetch_one(&pool)
+//         .await?;
+
+//         assert_eq!(last_block.last_block, 101);
+// >>>>>>> main
 
         Ok(())
     }
 
+// <<<<<<< log
     #[test]
     fn test_block_tracker_constants() {
         // Test that the constants are defined and accessible
         use zeroxbridge_sequencer::events::l1_event_watcher::{BLOCK_TRACKER_KEY, DEPOSIT_HASH_BLOCK_TRACKER_KEY};
+// =======
+//     #[tokio::test]
+//     async fn test_deposit_hash_appended_parsing() -> Result<()> {
+//         let pool = setup_test_db().await;
+//         let mut mock_provider = MockEthereumProvider::new();
+
+//         // Create test DepositHashAppended events
+//         let test_logs = vec![
+//             create_test_deposit_hash_log(
+//                 100,
+//                 "0x123",
+//                 1,
+//                 "0xabc0000000000000000000000000000000000000000000000000000000000000",
+//                 "0xdef0000000000000000000000000000000000000000000000000000000000000",
+//                 10,
+//             ),
+//             create_test_deposit_hash_log(
+//                 101,
+//                 "0x456",
+//                 2,
+//                 "0x1230000000000000000000000000000000000000000000000000000000000000",
+//                 "0x4560000000000000000000000000000000000000000000000000000000000000",
+//                 11,
+//             ),
+//         ];
+
+//         let test_logs = vec![
+//             create_test_deposit_log(100, "0xabc", 1, "0x1000000"),
+//             create_test_deposit_log(101, "0xdef", 2, "0x2000000"),
+//         ];
+
+//         // Mock get_logs response for DepositHashAppended
+//         mock_provider
+//             .expect_get_logs()
+//             .returning(move |_| Ok(test_logs.clone()));
+
+//         let result =
+//             zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
+//                 &pool,
+//                 "http://localhost:8545",
+//                 95,
+//                 "0x1234567890123456789012345678901234567890",
+//             )
+//             .await?;
+
+//         assert_eq!(result.len(), 2);
+
+//         // Check first event
+//         let first_event = &result[0];
+//         assert_eq!(first_event.block_number.unwrap(), 100);
+//         assert_eq!(first_event.data().index, U256::from(1));
+//         assert_eq!(first_event.data().elementsCount, U256::from(10));
+
+//         // Check second event
+//         let second_event = &result[1];
+//         assert_eq!(second_event.block_number.unwrap(), 101);
+//         assert_eq!(second_event.data().index, U256::from(2));
+//         assert_eq!(second_event.data().elementsCount, U256::from(11));
+
+//         // Verify database entries
+//         let db_entries = sqlx::query_as!(
+//             DepositHashAppended,
+//             "SELECT * FROM deposit_hashes WHERE block_number IN (100, 101)"
+//         )
+//         .fetch_all(&pool)
+//         .await?;
+
+//         assert_eq!(db_entries.len(), 2);
+//         assert_eq!(db_entries[0].index, 1);
+//         assert_eq!(db_entries[0].elements_count, 10);
+//         assert_eq!(db_entries[1].index, 2);
+//         assert_eq!(db_entries[1].elements_count, 11);
+
+//         // Verify block tracker was updated
+//         let last_block = sqlx::query!(
+//             "SELECT last_block FROM block_trackers WHERE key = $1",
+//             zeroxbridge_sequencer::events::l1_event_watcher::DEPOSIT_HASH_BLOCK_TRACKER_KEY
+//         )
+//         .fetch_one(&pool)
+//         .await?;
+
+//         assert_eq!(last_block.last_block, 101);
+// >>>>>>> main
 
         assert_eq!(BLOCK_TRACKER_KEY, "l1_deposit_events_last_block");
         assert_eq!(DEPOSIT_HASH_BLOCK_TRACKER_KEY, "l1_deposit_hash_events_last_block");
     }
 
+// <<<<<<< log
     #[test]
     fn test_deposit_event_fields() {
         // Create a minimal deposit event and verify field access
@@ -168,6 +389,46 @@ mod tests {
             newRoot: U256::from(0x5678),
             elementCount: U256::from(1),
         };
+// =======
+//     #[tokio::test]
+//     async fn test_empty_logs() -> Result<()> {
+//         let pool = setup_test_db().await;
+//         let mut mock_provider = MockEthereumProvider::new();
+
+//         // Mock get_logs to return empty vector
+//         mock_provider
+//             .expect_get_logs()
+//             .returning(move |_| Ok(Vec::new()));
+
+//         let result = zeroxbridge_sequencer::events::l1_event_watcher::fetch_l1_deposit_events(
+//             &pool,
+//             "http://localhost:8545",
+//             95u64,
+//             "0x1234567890123456789012345678901234567890",
+//         )
+//         .await;
+
+//         // Should return error when no logs found
+//         assert!(result.is_err());
+//         assert!(result.unwrap_err().to_string().contains("No logs found"));
+
+//         // Mock get_logs to return empty vector for DepositHashAppended
+//         mock_provider
+//             .expect_get_logs()
+//             .returning(move |_| Ok(Vec::new()));
+
+//         let hash_result =
+//             zeroxbridge_sequencer::events::l1_event_watcher::fetch_deposit_hash_appended_events(
+//                 &pool,
+//                 "http://localhost:8545",
+//                 95,
+//                 "0x1234567890123456789012345678901234567890",
+//             )
+//             .await?;
+
+//         // Empty logs should return empty vector
+//         assert!(hash_result.is_empty());
+// >>>>>>> main
 
         // Test that we can access all fields
         assert_eq!(event.depositId, U256::from(42));

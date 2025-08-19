@@ -67,7 +67,7 @@ async fn test_post_invalid_withdrawal() {
 
     // UPDATED: Now that validation is implemented, we expect BAD_REQUEST
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    
+
     // ADDED: Verify the error message content
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -117,7 +117,7 @@ async fn test_get_pending_withdrawals() {
         .await
         .unwrap();
     let parsed: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap(); // UPDATED: Changed to Vec to match deposit pattern
-    
+
     // ADDED: Verify we have withdrawals and check status (following deposit_api.rs pattern)
     assert!(!parsed.is_empty());
     assert_eq!(parsed[0]["status"], "pending");

@@ -7,7 +7,7 @@ use std::str::FromStr;
 use async_trait::async_trait;
 
 use alloy::{
-    primitives::{Address},
+    primitives::Address,
     providers::{Provider, ProviderBuilder},
     rpc::types::{Filter, Log},
     sol,
@@ -179,7 +179,10 @@ where
             Ok(logs) => {
                 let decoded_logs = logs
                     .into_iter()
-                    .map(|log| log.log_decode::<T>().map_err(|e| Box::new(e) as Box<dyn std::error::Error>))
+                    .map(|log| {
+                        log.log_decode::<T>()
+                            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
 
                 return Ok(decoded_logs);
@@ -194,10 +197,7 @@ where
 
                 warn!(
                     "Failed to fetch logs (attempt {}/{}): {}. Retrying in {} ms...",
-                    retries,
-                    MAX_RETRIES,
-                    e,
-                    backoff
+                    retries, MAX_RETRIES, e, backoff
                 );
 
                 sleep(Duration::from_millis(backoff)).await;
@@ -207,11 +207,10 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::{primitives::{Address, U256}};
+    use alloy::primitives::{Address, U256};
 
     #[test]
     fn construct_deposit_event_directly() {
