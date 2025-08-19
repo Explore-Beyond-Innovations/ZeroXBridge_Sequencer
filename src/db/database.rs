@@ -340,6 +340,53 @@ pub async fn get_or_create_nonce(conn: &PgPool, stark_pubkey: &str) -> Result<i6
     Ok(assigned)
 }
 
+pub async fn get_user_latest_deposit(
+    conn: &PgPool,
+    addr: &str,
+) -> Result<Option<Deposit>, sqlx::Error> {
+    println!("address gotten is :::{:?}", addr);
+    let deposit = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            ORDER BY created_at DESC 
+        "#,
+        addr
+    )
+    .fetch_optional(conn)
+    .await?;
+
+    println!("here is good ::: {:?}", deposit);
+
+    Ok(deposit)
+}
+
+pub async fn get_user_deposits(
+    conn: &PgPool,
+    addr: &str,
+    max_retries: u32,
+) -> Result<Vec<Deposit>, sqlx::Error> {
+    let deposits = sqlx::query_as!(
+        Deposit,
+        r#"
+            SELECT * 
+            FROM deposits 
+            WHERE stark_pub_key = $1
+            AND 
+            retry_count < $2 
+            ORDER BY created_at DESC
+        "#,
+        addr,
+        max_retries as i32
+    )
+    .fetch_all(conn)
+    .await?;
+
+    Ok(deposits)
+}
+
 pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
         .max_connections(10)
