@@ -26,3 +26,8 @@ CREATE TABLE IF NOT EXISTS withdrawal_proofs (
 ALTER TABLE withdrawals
     ADD COLUMN IF NOT EXISTS l1_hash TEXT,
     ADD COLUMN IF NOT EXISTS nonce BIGINT;
+
+
+-- CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_pubkey_nonce_uniq
+--   ON withdrawals (stark_pub_key, nonce)
+--   WHERE nonce IS NOT NULL;
