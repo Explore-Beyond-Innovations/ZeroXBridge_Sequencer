@@ -7270,6 +7270,7 @@ dependencies = [
  "alloy-sol-types",
  "alloy-transport-http 0.15.9",
  "anyhow",
+ "async-trait",
  "axum",
  "chrono",
  "clap",
