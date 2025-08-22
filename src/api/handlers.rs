@@ -1,13 +1,14 @@
-use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{extract::Query, http::StatusCode, response::IntoResponse, Extension, Json};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::PgPool;
-
+use sqlx::{PgPool, Postgres, Transaction};
+use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use crate::db::database::{
-    fetch_pending_deposits, fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit,
-    Withdrawal,
+    fetch_all_withdrawals_by_user, fetch_latest_withdrawal_by_user, fetch_pending_deposits, get_user_deposits, Withdrawal, insert_deposit_with_l2_hash, Deposit,
+    fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit, Withdrawal, get_or_create_nonce, get_user_latest_deposit, 
 };
-use crate::utils::{BurnData, HashMethod, compute_poseidon_commitment_hash};
+
 use starknet::core::types::Felt;
 
 // UPDATED: Added l1_token field
@@ -46,7 +47,7 @@ pub struct PoseidonHashRequest {
     pub nonce: u64,
     /// Block timestamp
     pub timestamp: u64,
-    /// Optional hash method to use: "batch" or "sequential" (default: "sequential")
+    /// Optional hash method to use: "batch" or "sequential" (default: "BatchHash")
     #[serde(default)]
     pub hash_method: Option<String>,
 }
@@ -84,6 +85,17 @@ pub struct ErrorResponse {
     pub details: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct WithdrawalQuery {
+    pub user_address: Option<String>,
+    pub stark_pub_key: Option<String>,
+}
+
+pub enum WithdrawalFetchMode {
+    Latest,
+    All,
+}
+
 pub async fn handle_deposit_post(
     Extension(pool): Extension<PgPool>,
     Json(payload): Json<DepositRequest>,
@@ -91,15 +103,52 @@ pub async fn handle_deposit_post(
     if payload.amount <= 0 || payload.stark_pub_key.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Invalid input".to_string()));
     }
-    let deposit_id = insert_deposit(
-        &pool,
+
+    // Parse recipient address as Felt (felt252)
+    let recipient_felt = match Felt::from_hex(&payload.stark_pub_key) {
+        Ok(felt) => felt,
+        Err(_) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Invalid Starknet address format. Must be a valid hex format (0x...).".to_string(),
+            ))
+        }
+    };
+
+    let mut tx: Transaction<'_, Postgres> = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let nonce = get_or_create_nonce(&mut tx, &payload.stark_pub_key)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let timestamp = Utc::now().timestamp() as u64;
+
+    let l2_hash = compute_poseidon_commitment_hash(
+        recipient_felt,
+        payload.amount as u128,
+        nonce as u64,
+        timestamp,
+        HashMethod::BatchHash,
+    );
+    let l2_hash_hex = format!("0x{:x}", l2_hash);
+
+    let deposit_id = insert_deposit_with_l2_hash(
+        &mut tx,
         &payload.stark_pub_key,
         payload.amount,
         &payload.commitment_hash,
+        &l2_hash_hex,
+        nonce,
     )
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(DepositResponse { deposit_id }))
 }
 
@@ -117,20 +166,68 @@ pub async fn create_withdrawal(
     Extension(pool): Extension<PgPool>,
     Json(payload): Json<CreateWithdrawalRequest>,
 ) -> Result<Json<WithrawalResponse>, (StatusCode, String)> {
-    // ADDED: Validation logic
+    use crate::db::database::{get_and_increment_withdrawal_nonce, insert_withdrawal_v2};
+    use crate::utils::BurnData;
+
+    // Validation logic
     if payload.amount <= 0
         || payload.stark_pub_key.trim().is_empty()
-        || payload.commitment_hash.trim().is_empty()
         || payload.l1_token.trim().is_empty()
     {
         return Err((StatusCode::BAD_REQUEST, "Invalid input".to_string()));
     }
 
-    let withdrawal_id = insert_withdrawal(
-        &pool,
+    // Just verify the Starknet address is a valid felt (do not store)
+    if Felt::from_hex(&payload.stark_pub_key).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid Starknet address format. Must be a valid hex format (0x...).".to_string(),
+        ));
+    };
+
+    let mut tx: Transaction<'_, Postgres> = pool
+        .begin()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Fetch and increment the nonce for the user
+    let nonce = get_and_increment_withdrawal_nonce(&mut tx, &payload.stark_pub_key)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get/increment nonce: {:?}", err),
+            )
+        })?;
+
+    // Use current timestamp if not provided (for compatibility, but ideally should be provided)
+    let timestamp = chrono::Utc::now().timestamp() as u64;
+
+    // Construct BurnData and compute the hash
+    let burn_data = BurnData {
+        caller: payload.stark_pub_key.clone(),
+        amount: payload.amount as u64, // assuming amount is always positive
+        nonce: nonce as u64,
+        time_stamp: timestamp,
+    };
+
+    if BurnData::hex_to_bytes32(&burn_data.caller).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid stark_pubkey format".to_string(),
+        ));
+    }
+    let l1_hash = burn_data.hash_to_hex_string();
+
+    // Insert withdrawal with l1_hash and nonce
+    let withdrawal_id = insert_withdrawal_v2(
+        &mut tx,
         &payload.stark_pub_key,
         payload.amount,
+        &payload.l1_token,
         &payload.commitment_hash,
+        &l1_hash,
+        nonce,
     )
     .await
     .map_err(|err| {
@@ -139,6 +236,10 @@ pub async fn create_withdrawal(
             format!("DB Error: {:?}", err),
         )
     })?;
+
+    tx.commit()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(WithrawalResponse { withdrawal_id }))
 }
@@ -150,6 +251,65 @@ pub async fn get_pending_withdrawals(
         Ok(withdrawals) => Ok(Json(withdrawals)),
         Err(err) => Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
     }
+}
+
+pub async fn fetch_withdrawals_by_identifier(
+    pool: &PgPool,
+    user_address: Option<String>,
+    stark_pub_key: Option<String>,
+    mode: WithdrawalFetchMode,
+) -> Result<Vec<Withdrawal>, (StatusCode, String)> {
+    // one (not two of them at the same time) query parameter must be provided to the endpoint that calls this handler
+    if (user_address.is_none() && stark_pub_key.is_none())
+        || (user_address.is_some() && stark_pub_key.is_some())
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Exactly one of user_address or stark_pub_key must be provided".into(),
+        ));
+    }
+
+    let identifier = user_address.or(stark_pub_key).unwrap();
+
+    match mode {
+        WithdrawalFetchMode::Latest => {
+            let w = fetch_latest_withdrawal_by_user(pool, &identifier)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            Ok(vec![w])
+        }
+        WithdrawalFetchMode::All => fetch_all_withdrawals_by_user(pool, &identifier)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn get_latest_withdrawal(
+    Extension(pool): Extension<PgPool>,
+    Query(query): Query<WithdrawalQuery>,
+) -> Result<Json<Vec<Withdrawal>>, (StatusCode, String)> {
+    let withdrawals = fetch_withdrawals_by_identifier(
+        &pool,
+        query.user_address,
+        query.stark_pub_key,
+        WithdrawalFetchMode::Latest,
+    )
+    .await?;
+    Ok(Json(withdrawals))
+}
+
+pub async fn get_all_withdrawals(
+    Extension(pool): Extension<PgPool>,
+    Query(query): Query<WithdrawalQuery>,
+) -> Result<Json<Vec<Withdrawal>>, (StatusCode, String)> {
+    let withdrawals = fetch_withdrawals_by_identifier(
+        &pool,
+        query.user_address,
+        query.stark_pub_key,
+        WithdrawalFetchMode::All,
+    )
+    .await?;
+    Ok(Json(withdrawals))
 }
 
 pub async fn hello_world(
@@ -185,17 +345,17 @@ pub async fn compute_poseidon_hash(
         ),
     };
 
-    // Determine which hash method to use (default to sequential pairwise which is more common in Cairo contracts)
+    // Determine which hash method to use (default to BatchHash for efficiency)
     let method = match payload.hash_method.as_deref() {
-        Some("batch") => HashMethod::BatchHash,
-        Some("sequential") | None => HashMethod::SequentialPairwise,
+        Some("BatchHash") | Some("batch") | None => HashMethod::BatchHash,
+        Some("SequentialPairwise") | Some("sequential") => HashMethod::SequentialPairwise,
         Some(method) => {
             return Err((
                 StatusCode::BAD_REQUEST,
                 format!(
-                    "Invalid hash method: '{}'. Valid options are 'batch' or 'sequential'",
-                    method
-                ),
+                "Invalid hash method: '{}'. Valid options are 'BatchHash' or 'SequentialPairwise'",
+                method
+            ),
             ))
         }
     };
@@ -247,4 +407,57 @@ pub async fn compute_hash_handler(
         },
     };
     Ok(Json(response))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FetchDepositQuery {
+    pub stark_pub_key: Option<String>,
+    pub user_address: Option<String>,
+}
+
+// pub struct
+
+pub async fn fetch_user_latest_deposit_handler(
+    Extension(pool): Extension<PgPool>,
+    Query(payload): Query<FetchDepositQuery>,
+) -> Result<Json<Deposit>, (StatusCode, String)> {
+    let key = extract_user_key(&payload)?;
+
+    let deposit = get_user_latest_deposit(&pool, &key).await;
+
+    match deposit {
+        Ok(Some(dp)) => Ok(Json(dp)),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            "No deposits found for the given user".to_string(),
+        )),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+pub async fn fetch_user_deposits_handler(
+    Extension(pool): Extension<PgPool>,
+    Query(payload): Query<FetchDepositQuery>,
+) -> Result<Json<Vec<Deposit>>, (StatusCode, String)> {
+    let key = extract_user_key(&payload)?;
+
+    let deposit = get_user_deposits(&pool, &key, 2)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(deposit))
+}
+
+fn extract_user_key(payload: &FetchDepositQuery) -> Result<String, (StatusCode, String)> {
+    match (
+        payload.stark_pub_key.as_ref(),
+        payload.user_address.as_ref(),
+    ) {
+        (Some(stark), _) => Ok(stark.trim().to_string()),
+        (None, Some(user)) => Ok(user.trim().to_string()),
+        (None, None) => Err((
+            StatusCode::BAD_REQUEST,
+            "Either stark_pub_key or user_address must be provided".into(),
+        )),
+    }
 }
