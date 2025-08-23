@@ -6,7 +6,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use crate::utils::{compute_poseidon_commitment_hash, BurnData, HashMethod};
 use crate::db::database::{
     fetch_all_withdrawals_by_user, fetch_latest_withdrawal_by_user, fetch_pending_deposits, get_user_deposits, Withdrawal, insert_deposit_with_l2_hash, Deposit,
-    fetch_pending_withdrawals, insert_deposit, insert_withdrawal, Deposit, Withdrawal, get_or_create_nonce, get_user_latest_deposit, 
+    fetch_pending_withdrawals, insert_deposit, insert_withdrawal, get_or_create_nonce, get_user_latest_deposit, 
 };
 
 use starknet::core::types::Felt;

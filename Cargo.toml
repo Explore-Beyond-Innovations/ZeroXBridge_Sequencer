@@ -1,17 +1,19 @@
-[package]
-name = "zeroxbridge_sequencer"
-version = "0.1.0"
-edition = "2021"
-authors = ["ZeroXBridge Team <info@zeroxbridge.com>"]
-description = "Sequencer for managing cross-chain deposits and withdrawals between Ethereum and Starknet"
-readme = "README.md"
+[workspace]
+members = [
+  "crates/lib",
+  "crates/proof-pipeline",
+  "crates/tree-builder",
+  "crates/sequencer",
+  "crates/proof-submitter",
+  "crates/tests"
+]
 
-[dependencies]
+[workspace.dependencies]
 # Async runtime
-tokio = { version = "1.38", features = ["full", "macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["full", "macros", "rt-multi-thread"] }
 
 # Database
-sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "json"] }
+sqlx = { version = "0.8.5", features = ["postgres", "runtime-tokio-rustls", "macros", "migrate", "uuid", "chrono", "json"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -24,6 +26,8 @@ anyhow = "1.0.95"
 # Logging and tracing
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+log = "0.4"
+env_logger = "0.11"
 
 # Web framework
 axum = "0.8.3"
@@ -32,8 +36,8 @@ tower-http = { version = "0.4", features = ["trace", "cors"] }
 hyper = "0.14.27"
 
 # Starknet interaction
-starknet = "0.13.0"  # Consider bumping to 0.13 if compatible; avoid 0.7 unless needed for `no-std`.
-starknet-crypto = "0.7.4"  # For cryptographic operations including Poseidon hash
+starknet = "0.13.0"
+starknet-crypto = "0.7.4"
 
 # Ethereum interaction
 ethers = { version = "2.0.14", features = ["rustls", "ws"] }
@@ -43,40 +47,38 @@ reqwest = { version = "0.12.15", features = ["json", "multipart"] }
 
 # Environment and utility
 dotenv = "0.15"
-uuid = { version = "1.7.0", features = ["v4", "serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 sha2 = "0.10"
+sha3 = "0.10.8"
+url = "2.5.4"
+hex = "0.4"
+rand = "0.8"
+config = "0.15.11"
+clap = { version = "4.0", features = ["derive"] }
+toml = "0.8.23"
+
+# Alloy ecosystem
+alloy = "0.14.0"
 alloy-json-rpc = "0.15.6"
 alloy-primitives = "1.0.0"
 alloy-rpc-client = "0.15.6"
 alloy-transport-http = "0.15.6"
-url = "2.5.4"
 alloy-sol-types = "1.0.0"
-hex = "0.4"
-rand = "0.8"
-config = "0.15.11"
-alloy = "0.14.0"
-clap = { version = "4.0", features = ["derive"] }
 
 # Testing & mocking
 mockall = "0.13.1"
-
-# Cryptography
-sha3 = "0.10.8"
-futures-util = "0.3.31"
-toml = "0.8.23"
-async-trait = "0.1.88"
-
-[[bin]]
-name = "proof-submitter"
-path = "bin/proof-submitter/src/main.rs"
-
-[package.metadata.sqlx]
-offline = true
-
-[dev-dependencies]
-pretty_assertions = "1.4.0"
 tokio-test = "0.4"
+pretty_assertions = "1.4.0"
 mockito = "0.31"
 tempfile = "3.20.0"
-toml = "0.8.23"
+
+# Futures and async utils
+futures = "0.3"
+futures-util = "0.3.31"
+async-trait = "0.1.88"
+
+# Misc
+structopt = "0.3"
+num-bigint = "0.4"
+num-traits = "0.2"

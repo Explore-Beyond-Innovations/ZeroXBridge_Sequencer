@@ -1,0 +1,55 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+sqlx.workspace = true
+
+# Local crates you want to test
+sequencer-lib = { path = "../lib" }
+sequencer = { path = "../sequencer" }
+proof-submitter = { path = "../proof-submitter" }
+proof-generatorr = { path = "../proof-pipeline" }
+tree-builder = { path = "../tree-builder" }
+
+# Each test file under src/ becomes its own test target
+[[test]]
+name = "compute_hash"
+path = "src/compute_hash.rs"
+
+[[test]]
+name = "deposit_api"
+path = "src/deposit_api.rs"
+
+[[test]]
+name = "withdrawal_api"
+path = "src/withdrawal_api.rs"
+
+[[test]]
+name = "proof_submission"
+path = "src/proof_submission.rs"
+
+[[test]]
+name = "integration_proof_submission"
+path = "src/integration_proof_submission.rs"
+
+[[test]]
+name = "l1_events_logs"
+path = "src/l1_events_logs.rs"
+
+[[test]]
+name = "l2_event_watcher"
+path = "src/l2_event_watcher.rs"
+
+[[test]]
+name = "poseidon_tests"
+path = "src/poseidon_tests.rs"
+
+[[test]]
+name = "proof_submission_integration_test"
+path = "src/proof_submission_integration_test.rs"
