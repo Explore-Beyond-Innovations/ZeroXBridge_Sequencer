@@ -67,6 +67,9 @@ futures-util = "0.3.31"
 toml = "0.8.23"
 async-trait = "0.1.88"
 
+# Local crates
+proof-pipeline = { path = "crates/proof-pipeline" }
+
 [[bin]]
 name = "proof-submitter"
 path = "bin/proof-submitter/src/main.rs"
