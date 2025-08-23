@@ -61,6 +61,9 @@ clap = { version = "4.0", features = ["derive"] }
 # Testing & mocking
 mockall = "0.13.1"
 
+# Tree builder crate
+tree-builder = { path = "crates/tree-builder" }
+
 # Cryptography
 sha3 = "0.10.8"
 futures-util = "0.3.31"
@@ -70,6 +73,10 @@ async-trait = "0.1.88"
 [[bin]]
 name = "proof-submitter"
 path = "bin/proof-submitter/src/main.rs"
+
+[[bin]]
+name = "sequencer"
+path = "bin/sequencer/src/main.rs"
 
 [package.metadata.sqlx]
 offline = true

@@ -19,7 +19,7 @@ pub struct Withdrawal {
     pub updated_at: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct Deposit {
     pub id: i32,
     pub stark_pub_key: String,
@@ -27,10 +27,14 @@ pub struct Deposit {
     pub commitment_hash: String,
     pub l2_hash: Option<String>,
     pub nonce: Option<i64>,
-    pub status: String, // "pending", "processed", etc.
+    pub status: String, // "PENDING_TREE_INCLUSION", "PENDING_PROOF_GENERATION", "processed", etc.
     pub retry_count: i32,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub leaf_index: Option<i64>,
+    pub proof: Option<serde_json::Value>,
+    pub included: Option<bool>,
+    pub merkle_root: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -484,4 +488,104 @@ pub async fn get_db_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .max_connections(10)
         .connect(database_url)
         .await
+}
+
+// Tree builder specific functions
+pub async fn fetch_deposits_for_tree_inclusion(
+    conn: &PgPool,
+    limit: i64,
+) -> Result<Vec<Deposit>, sqlx::Error> {
+    let deposits = sqlx::query_as!(
+        Deposit,
+        r#"
+        SELECT id, stark_pub_key, amount, commitment_hash, status, retry_count,
+               created_at, updated_at, leaf_index, proof, included, merkle_root
+        FROM deposits
+        WHERE status = 'PENDING_TREE_INCLUSION'
+        ORDER BY COALESCE(leaf_index, id) ASC
+        LIMIT $1
+        "#,
+        limit
+    )
+    .fetch_all(conn)
+    .await?;
+
+    Ok(deposits)
+}
+
+pub async fn fetch_included_deposits(
+    conn: &PgPool,
+) -> Result<Vec<Deposit>, sqlx::Error> {
+    let deposits = sqlx::query_as!(
+        Deposit,
+        r#"
+        SELECT id, stark_pub_key, amount, commitment_hash, status, retry_count,
+               created_at, updated_at, leaf_index, proof, included, merkle_root
+        FROM deposits
+        WHERE included = true
+        ORDER BY COALESCE(leaf_index, id) ASC
+        "#
+    )
+    .fetch_all(conn)
+    .await?;
+
+    Ok(deposits)
+}
+
+pub async fn update_deposit_with_proof(
+    conn: &PgPool,
+    id: i32,
+    proof: serde_json::Value,
+    merkle_root: String,
+    leaf_index: i64,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Validate proof structure by deserializing to typed struct
+    let typed_proof: crate::db::types::DatabaseProof = serde_json::from_value(proof.clone())
+        .map_err(|e| format!("Invalid proof format: {}", e))?;
+    
+    // Validate proof contents
+    typed_proof.validate()
+        .map_err(|e| format!("Proof validation failed: {}", e))?;
+    
+    // Re-serialize validated proof to ensure consistent format
+    let validated_proof = serde_json::to_value(typed_proof)
+        .map_err(|e| format!("Failed to serialize validated proof: {}", e))?;
+
+    sqlx::query!(
+        r#"
+        UPDATE deposits
+        SET proof = $2,
+            merkle_root = $3,
+            leaf_index = $4,
+            included = true,
+            status = 'PENDING_PROOF_GENERATION',
+            updated_at = NOW()
+        WHERE id = $1
+        "#,
+        id,
+        validated_proof,
+        merkle_root,
+        leaf_index
+    )
+    .execute(conn)
+    .await
+    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    Ok(())
+}
+
+pub async fn get_max_leaf_index(
+    conn: &PgPool,
+) -> Result<Option<i64>, sqlx::Error> {
+    let result = sqlx::query_scalar!(
+        r#"
+        SELECT MAX(leaf_index)
+        FROM deposits
+        WHERE included = true
+        "#
+    )
+    .fetch_one(conn)
+    .await?;
+
+    Ok(result)
 }
