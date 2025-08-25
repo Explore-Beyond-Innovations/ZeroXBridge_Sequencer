@@ -1,0 +1,52 @@
+[package]
+name = "sequencer-lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+starknet.workspace = true
+starknet-crypto.workspace = true
+ethers.workspace = true
+reqwest.workspace = true
+dotenv.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+alloy-json-rpc.workspace = true
+alloy-primitives.workspace = true
+alloy-rpc-client.workspace = true
+alloy-transport-http.workspace = true
+url.workspace = true
+alloy-sol-types.workspace = true
+hex.workspace = true
+rand.workspace = true
+config.workspace = true
+alloy.workspace = true
+clap.workspace = true
+mockall.workspace = true
+sha3.workspace = true
+futures-util.workspace = true
+toml.workspace = true
+async-trait.workspace = true
+
+[package.metadata.sqlx]
+offline = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tokio-test.workspace = true
+mockito.workspace = true
+tempfile.workspace = true
+toml.workspace = true

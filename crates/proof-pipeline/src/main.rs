@@ -1,5 +1,5 @@
 pub mod pipeline;
-use crate::pipeline::{run_full_stone_pipeline, CalldataArtifacts, ProofError, ProofInputArgs};
+use crate::pipeline::{run_full_stone_pipeline, ProofError, ProofInputArgs};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
