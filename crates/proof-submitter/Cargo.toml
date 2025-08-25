@@ -46,7 +46,7 @@ sequencer-lib = { path = "../lib" }
 
 [[bin]]
 name = "proof-submitter"
-path = "bin/proof-submitter/src/main.rs"
+path = "src/main.rs"
 
 [package.metadata.sqlx]
 offline = true

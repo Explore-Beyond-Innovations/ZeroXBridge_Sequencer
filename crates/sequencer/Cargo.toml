@@ -44,8 +44,8 @@ async-trait.workspace = true
 sequencer-lib = { path = "../lib" }
 
 [[bin]]
-name = "proof-submitter"
-path = "bin/proof-submitter/src/main.rs"
+name = "sequencer"
+path = "src/main.rs"
 
 [package.metadata.sqlx]
 offline = true

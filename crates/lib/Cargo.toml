@@ -41,10 +41,6 @@ futures-util.workspace = true
 toml.workspace = true
 async-trait.workspace = true
 
-[[bin]]
-name = "proof-submitter"
-path = "bin/proof-submitter/src/main.rs"
-
 [package.metadata.sqlx]
 offline = true
 
